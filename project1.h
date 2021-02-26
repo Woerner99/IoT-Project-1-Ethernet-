@@ -8,6 +8,8 @@
 #define MAX_CHARS 80
 #define MAX_FIELDS 6
 
+#define MAX_PACKET_SIZE 1522
+
 
 typedef struct USER_DATA
 {
@@ -69,6 +71,7 @@ void clearBuffer(USER_DATA* data)
 
 
 }
+
 
 void reboot()
 {

@@ -72,9 +72,6 @@ extern bool etherIsIpUnicast(etherHeader *ether);
 extern bool etherIsPingRequest(etherHeader *ether);
 extern void etherSendPingResponse(etherHeader *ether);
 
-
-
-
 // Terminal Interface Methods
 extern void initTerminal();
 extern char getcUart0();
@@ -91,7 +88,7 @@ extern void writeEeprom(uint16_t add, uint32_t data);
 extern uint32_t readEeprom(uint16_t add);
 extern void flashEeprom();
 extern void storeIP(bool mqtt, uint8_t ip0, uint8_t ip1, uint8_t ip2, uint8_t ip3);
-extern void startupCheck();
+extern bool startupCheck();
 
 
 //-----------------------------------------------------------------------------
@@ -107,13 +104,31 @@ int main(void)
     setUart0BaudRate(115200, 40e6);
     initEthernet();
 
+    // Create instance of USER_DATA for Terminal Interface input
     USER_DATA data;
     clearBuffer(&data);
+
+    // Create instance of etherHeader and declare a buffer and udpData
+    uint8_t* udpData;
+    uint8_t buffer[MAX_PACKET_SIZE];
+    etherHeader *ethData = (etherHeader*) buffer;
 
     // Read the EEPROM to check for stored IP or MQTT addresses
     startupCheck();
 
-    putsUart0("=======================================================\t\r\n");
+    // Init Ethernet Interface (eth0)
+    initEthernet();
+    etherSetMacAddress(2,3,4,5,6,111);
+    etherDisableDhcpMode();
+    etherSetIpAddress(192, 168, 1, 111);
+    storeIP(isMQTT,192, 168, 1, 111);
+    etherSetIpSubnetMask(255, 255, 255, 0);
+    etherSetIpGatewayAddress(192, 168, 1, 111);
+    etherInit(ETHER_UNICAST | ETHER_BROADCAST | ETHER_HALFDUPLEX);
+
+
+
+    putsUart0("\t\r\n\n=======================================================\t\r\n");
     putsUart0("IoT Project 1: MQTT Client Implementation\t\r\n");
     putsUart0("Author: Sean-Michael Woerner\t\r\n");
     putsUart0("=======================================================\t\r\n");
@@ -134,9 +149,20 @@ int main(void)
         //-----------------------------------------------------------------------------
 
         // "clear": clear the terminal screen
+        /*
         if(isCommand(&data, "clear", 0))
         {
             clearScreen();
+            valid2 = true;
+            clearBuffer(&data);
+        }
+        */
+
+        if(isCommand(&data, "connect", 0))
+        {
+            putsUart0("\t\r\nconnecting...\t\r\n");
+
+
             valid2 = true;
             clearBuffer(&data);
         }
@@ -196,6 +222,8 @@ int main(void)
               uint8_t ip3 = getFieldInteger(&data, 5);
               // save to EEPROM here using the 4 ints
               storeIP(isMQTT,ip0, ip1, ip2, ip3);
+              // set IP address for connection
+              etherSetIpAddress(ip0, ip1, ip2, ip3);
           }
 
 
