@@ -34,6 +34,7 @@ Target Platform: EK-TM4C123GXL Evaluation Board
 #include "tm4c123gh6pm.h"
 #include "clock.h"
 #include "eeprom.h"
+#include "eth0.h"
 #include "gpio.h"
 #include "project1.h"
 #include "spi0.h"
@@ -52,6 +53,27 @@ Target Platform: EK-TM4C123GXL Evaluation Board
 // Ethernet methods
 extern void initEthernet();
 extern void displayConnectionInfo();
+extern void etherSetMacAddress(uint8_t mac0, uint8_t mac1, uint8_t mac2, uint8_t mac3, uint8_t mac4, uint8_t mac5);
+extern void etherDisableDhcpMode();
+extern void etherSetIpAddress(uint8_t ip0, uint8_t ip1, uint8_t ip2, uint8_t ip3);
+extern void etherSetIpGatewayAddress(uint8_t ip0, uint8_t ip1, uint8_t ip2, uint8_t ip3);
+extern void etherInit(uint16_t mode);
+extern bool etherIsDataAvailable();
+extern bool etherIsOverflow();
+extern uint16_t etherGetPacket(etherHeader *ether, uint16_t maxSize);
+extern bool etherIsArpRequest(etherHeader *ether);
+extern void etherSendArpResponse(etherHeader *ether);
+extern void etherSendArpRequest(etherHeader *ether, uint8_t ip[]);
+extern bool etherIsUdp(etherHeader *ether);
+extern uint8_t* etherGetUdpData(etherHeader *ether);
+extern void etherSendUdpResponse(etherHeader *ether, uint8_t* udpData, uint8_t udpSize);
+extern bool etherIsIp(etherHeader *ether);
+extern bool etherIsIpUnicast(etherHeader *ether);
+extern bool etherIsPingRequest(etherHeader *ether);
+extern void etherSendPingResponse(etherHeader *ether);
+
+
+
 
 // Terminal Interface Methods
 extern void initTerminal();
@@ -61,6 +83,7 @@ extern void parseFields(USER_DATA* data);
 extern bool isCommand(USER_DATA* data, const char strCommand[], uint8_t minArguments);
 extern int32_t getFieldInteger(USER_DATA* data, uint8_t fieldNumber);
 extern char* getFieldString(USER_DATA* data, uint8_t fieldNumber);
+extern bool kbhitUart0();
 
 // EEPROM methods
 extern void initEeprom();
