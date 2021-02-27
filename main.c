@@ -72,9 +72,6 @@ extern bool etherIsIpUnicast(etherHeader *ether);
 extern bool etherIsPingRequest(etherHeader *ether);
 extern void etherSendPingResponse(etherHeader *ether);
 
-
-
-
 // Terminal Interface Methods
 extern void initTerminal();
 extern char getcUart0();
@@ -91,7 +88,7 @@ extern void writeEeprom(uint16_t add, uint32_t data);
 extern uint32_t readEeprom(uint16_t add);
 extern void flashEeprom();
 extern void storeIP(bool mqtt, uint8_t ip0, uint8_t ip1, uint8_t ip2, uint8_t ip3);
-extern void startupCheck();
+extern bool startupCheck();
 
 
 //-----------------------------------------------------------------------------
@@ -107,13 +104,39 @@ int main(void)
     setUart0BaudRate(115200, 40e6);
     initEthernet();
 
+    // Create instance of USER_DATA for Terminal Interface input
     USER_DATA data;
     clearBuffer(&data);
+
+    // Create instance of etherHeader and declare a buffer and udpData
+    uint8_t* udpData;
+    uint8_t buffer[MAX_PACKET_SIZE];
+    etherHeader *ethData = (etherHeader*) buffer;
 
     // Read the EEPROM to check for stored IP or MQTT addresses
     startupCheck();
 
-    putsUart0("=======================================================\t\r\n");
+    // Init Ethernet Controller
+    initEthernet();
+    // Set MAC address
+    etherSetMacAddress(2,3,4,5,6,111);
+    etherDisableDhcpMode();
+    // Default IP address (assigned from class)
+    etherSetIpAddress(192, 168, 1, 111);
+    storeIP(isMQTT,192, 168, 1, 111);
+    etherSetIpSubnetMask(255, 255, 255, 0);
+    etherSetIpGatewayAddress(192, 168, 1, 111);
+    etherInit(ETHER_UNICAST | ETHER_BROADCAST | ETHER_HALFDUPLEX);
+
+    // Flash LED
+    setPinValue(GREEN_LED, 1);
+    waitMicrosecond(100000);
+    setPinValue(GREEN_LED, 0);
+    waitMicrosecond(100000);
+
+
+
+    putsUart0("\t\r\n\n=======================================================\t\r\n");
     putsUart0("IoT Project 1: MQTT Client Implementation\t\r\n");
     putsUart0("Author: Sean-Michael Woerner\t\r\n");
     putsUart0("=======================================================\t\r\n");
@@ -128,20 +151,36 @@ int main(void)
         getsUart0(&data);                        // Get string from user
         parseFields(&data);                      // Parse the fields from user input
 
+        char *cmd = getFieldString(&data, 0);  // alternative function for isCommand() used to prevent cmd's with same first letter
+                                               // use this for cmd's with 0 entries
 
         //-----------------------------------------------------------------------------
         // COMMANDS FOR USER
         //-----------------------------------------------------------------------------
 
+
         // "clear": clear the terminal screen
-        if(isCommand(&data, "clear", 0))
+
+        if(strCompare(cmd, "clear"))
         {
             clearScreen();
             valid2 = true;
             clearBuffer(&data);
         }
 
-        if(isCommand(&data, "flash",0))
+
+        uint8_t destIP[] = {192,168,1,70};
+        if(strCompare(cmd, "connect"))
+        {
+            putsUart0("\t\r\nconnecting...\t\r\n");
+            //etherSendArpResponse(ethData);
+            etherSendArpRequest(ethData,destIP);
+
+            valid2 = true;
+            clearBuffer(&data);
+        }
+
+        if(strCompare(cmd, "flash"))
         {
             flashEeprom();
             valid2 = true;
@@ -149,7 +188,7 @@ int main(void)
         }
 
         // "help": list available commands and their functions
-        if(isCommand(&data, "help", 0))
+        if(strCompare(cmd, "help"))
         {
             putsUart0("Showing list of available terminal commands:\t\r\n");
             putsUart0("--------------------------------------------\t\r\n");
@@ -173,7 +212,7 @@ int main(void)
 
 
         // *FIXME* goes to initial start of program but gets stuck in ResetISR()
-        if(isCommand(&data, "reboot", 0))
+        if(strCompare(cmd, "reboot"))
         {
             putsUart0("\t\r\nRebooting System ...\t\r\n");
             //reboot();
@@ -186,8 +225,8 @@ int main(void)
         // set IP address or MQTT address and store to EEPROM
         if(isCommand(&data, "set", 5))
         {
-            char *cmd = getFieldString(&data, 1);
-          if(strCompare(cmd, "IP"))
+            char *cmd2 = getFieldString(&data, 1);
+          if(strCompare(cmd2, "IP"))
           {
               isMQTT = false;
               uint8_t ip0 = getFieldInteger(&data, 2);
@@ -196,10 +235,12 @@ int main(void)
               uint8_t ip3 = getFieldInteger(&data, 5);
               // save to EEPROM here using the 4 ints
               storeIP(isMQTT,ip0, ip1, ip2, ip3);
+              // set IP address for connection
+              etherSetIpAddress(ip0, ip1, ip2, ip3);
           }
 
 
-          if(strCompare(cmd, "MQTT"))
+          if(strCompare(cmd2, "MQTT"))
           {
               isMQTT = true;
               uint8_t ip0 = getFieldInteger(&data, 2);
@@ -215,9 +256,11 @@ int main(void)
         }
 
         // Displays IP and MQTT addresses, MQTT connection state and TCP FSM state
-        if(isCommand(&data, "status",0))
+        if(strCompare(cmd, "status"))
         {
             listCommands();
+            putsUart0("\t\r\n\n");
+            displayConnectionInfo();
             valid2 = true;
             clearBuffer(&data);
         }

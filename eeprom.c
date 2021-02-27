@@ -23,7 +23,6 @@
 #include "tm4c123gh6pm.h"
 #include "wait.h"
 
-#define LED PORTF,2
 
 uint8_t currentStatus;
 // Variables for storing in EEPROM
@@ -46,14 +45,10 @@ void initEeprom()
 
 void writeEeprom(uint16_t add, uint32_t data)
 {
-    setPinValue(LED,1);
     EEPROM_EEBLOCK_R = add >> 4;
     EEPROM_EEOFFSET_R = add & 0xF;
     EEPROM_EERDWR_R = data;
-
     while (EEPROM_EEDONE_R & EEPROM_EEDONE_WORKING);
-    waitMicrosecond(50000);
-    setPinValue(LED,0);
 }
 
 uint32_t readEeprom(uint16_t add)
@@ -120,7 +115,7 @@ uint32_t findIndex(char *name)
 
 // On startup check if there is already an IP or MQTT saved to the EEPROM
 // if so, update the flags to prevent multiple entries of IP or MQTT addresses
-void startupCheck()
+bool startupCheck()
 {
     char* ip = "IP_Address";
     char* mqtt = "MQTT";
@@ -130,6 +125,8 @@ void startupCheck()
     if(currentStatus == Found)
     {
         isIPset = true;
+        // if IP is already stored in eeprom, don't save default IP address
+        return true;
     }
 
     currentStatus = notFound;
@@ -255,11 +252,11 @@ void storeIP(bool mqtt, uint8_t ip0, uint8_t ip1, uint8_t ip2, uint8_t ip3)
       // print to screen for feedback confirmation that the new addresses have been saved in eeprom
       if(mqtt)
       {
-          putsUart0("\t\r\n<MQTT has been set>");
+          putsUart0("\t\r\n<MQTT has been stored>");
       }
       else
       {
-          putsUart0("\t\r\n<IP_Address has been set>");
+          putsUart0("\t\r\n<IP_Address has been stored>");
       }
 }
 

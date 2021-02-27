@@ -15,6 +15,7 @@ main.obj: E:/Program\ Files\ (x86)/Texas\ Insturments/CCS1010/ccs/tools/compiler
 main.obj: ../tm4c123gh6pm.h
 main.obj: ../clock.h
 main.obj: ../eeprom.h
+main.obj: ../eth0.h
 main.obj: ../gpio.h
 main.obj: ../project1.h
 main.obj: ../spi0.h
@@ -36,6 +37,7 @@ E:/Program\ Files\ (x86)/Texas\ Insturments/CCS1010/ccs/tools/compiler/ti-cgt-ar
 ../tm4c123gh6pm.h: 
 ../clock.h: 
 ../eeprom.h: 
+../eth0.h: 
 ../gpio.h: 
 ../project1.h: 
 ../spi0.h: 
