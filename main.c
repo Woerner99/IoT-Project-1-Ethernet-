@@ -123,7 +123,7 @@ int main(void)
     etherDisableDhcpMode();
     // Default IP address (assigned from class)
     etherSetIpAddress(192, 168, 1, 111);
-    storeIP(isMQTT,192, 168, 1, 111);
+    storeIP(false,192, 168, 1, 111);
     etherSetIpSubnetMask(255, 255, 255, 0);
     etherSetIpGatewayAddress(192, 168, 1, 111);
     etherInit(ETHER_UNICAST | ETHER_BROADCAST | ETHER_HALFDUPLEX);
@@ -175,6 +175,8 @@ int main(void)
             putsUart0("\t\r\nconnecting...\t\r\n");
             //etherSendArpResponse(ethData);
             etherSendArpRequest(ethData,destIP);
+            etherGetPacket(ethData, MAX_PACKET_SIZE);
+            etherSendArpResponse(ethData);
 
             valid2 = true;
             clearBuffer(&data);
