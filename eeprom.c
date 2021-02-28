@@ -444,6 +444,8 @@ void listCommands()
     size = readEeprom(0);
     putsUart0("\t\r\nSystem Status:");
     putsUart0("\t\r\n-----------------------------------------");
+    putsUart0("\t\r\nEEPROM Storage:");
+    putsUart0("\t\r\n---------------");
 
     // If there is no IP or MQTT set, print to terminal when status is called that
     // it is not yet set
