@@ -133,7 +133,11 @@ typedef struct _socket
   uint16_t sourcePort;      // some epherial value (10000)
   uint8_t destIp[4];        // MQTT broker IP
   uint8_t destHw[6];        // MQTT broker MAC
+<<<<<<< HEAD
   uint16_t destPort;         // 1883
+=======
+  uint16_t desPort;         // 1883
+>>>>>>> 63526d11e5d575056abbb8a9569164f6fe66b948
 } socket;
 
 #define ETHER_UNICAST        0x80

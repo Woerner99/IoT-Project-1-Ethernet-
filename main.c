@@ -178,6 +178,8 @@ int main(void)
             putsUart0("\t\r\nconnecting...\t\r\n");
             // Send request, then get packet from MQTT and send response
             etherSendArpRequest(ethData,destIP);
+            etherGetPacket(ethData, MAX_PACKET_SIZE);
+            etherSendArpResponse(ethData);
 
 
             putsUart0("getting packet\t\r\n");
