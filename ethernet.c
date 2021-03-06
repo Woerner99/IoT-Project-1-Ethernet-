@@ -157,8 +157,8 @@ void displayConnectionInfo()
 // Max packet is calculated as:
 // Ether frame header (18) + Max MTU (1500) + CRC (4)
 #define MAX_PACKET_SIZE 1522
-/*
-int main(void)
+
+void ethernetLoop(void)
 {
     uint8_t* udpData;
     uint8_t buffer[MAX_PACKET_SIZE];
@@ -243,5 +243,5 @@ int main(void)
         }
     }
 }
-*/
+
 

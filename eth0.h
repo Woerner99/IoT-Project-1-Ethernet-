@@ -126,6 +126,16 @@ typedef struct _tcpHeader // 20 or more bytes
   uint8_t  data[0];
 } tcpHeader;
 
+typedef struct _socket
+{
+  uint8_t sourceIp[4];      // IP of Red Board (TM4C123XL)
+  uint8_t sourceHw[6];      // MAC of Red Board
+  uint16_t sourcePort;      // some epherial value (10000)
+  uint8_t destIp[4];        // MQTT broker IP
+  uint8_t destHw[6];        // MQTT broker MAC
+  uint16_t destPort;         // 1883
+} socket;
+
 #define ETHER_UNICAST        0x80
 #define ETHER_BROADCAST      0x01
 #define ETHER_MULTICAST      0x02

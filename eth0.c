@@ -130,6 +130,8 @@ uint8_t ipSubnetMask[IP_ADD_LENGTH] = {255,255,255,0};
 uint8_t ipGwAddress[IP_ADD_LENGTH] = {0,0,0,0};
 bool    dhcpEnabled = true;
 
+socket *soc;
+
 //-----------------------------------------------------------------------------
 // Subroutines
 //-----------------------------------------------------------------------------
@@ -874,3 +876,64 @@ void etherGetMacAddress(uint8_t mac[6])
     for (i = 0; i < 6; i++)
         mac[i] = macAddress[i];
 }
+
+// Fills Socket structure that contains info about device we
+// are connecting to
+void fillSocket(etherHeader *ether, uint8_t destIP[])
+{
+    socket *soc = (socket*)ether->data;
+    uint8_t i;
+    // save MQTT MAC to destination HW address
+    // save Red board MAC to source HW address
+    for (i = 0; i < HW_ADD_LENGTH; i++)
+    {
+        soc->destHw[i] = ether->sourceAddress[i];
+        soc->sourceHw[i] = ether->destAddress[i];
+    }
+    // save MQTT IP to destination IP address
+    // save Red board IP to source IP address
+    for (i = 0; i < IP_ADD_LENGTH; i++)
+    {
+        soc->destIp[i] = destIP[i];
+        soc->sourceIp[i] = ipAddress[i];
+    }
+    // set source port (some epherial value like 10000)
+    // set destination port (1883 for MQTT port)
+    soc->sourcePort = 10000;
+    soc->destPort = 1883;
+}
+
+// Using Assembled Socket, fill etherHeader
+void assembleEtherHeader(etherHeader *ether)
+{
+    socket *soc = (socket*)ether->data;
+    uint8_t i;
+    // save MAC addresses from socket
+    for (i = 0; i < HW_ADD_LENGTH; i++)
+    {
+        ether->destAddress[i] = soc->destHw[i];
+        ether->sourceAddress[i] = soc->sourceHw[i];
+    }
+    // give frame type of 0x0800 for IP
+    ether->frameType = 0x0800;
+
+}
+
+// ***IN PROGRESS***
+void assembleIpHeader(etherHeader *ether)
+{
+    socket *soc = (socket*)ether->data;
+    ipHeader *ipHead = (ipHeader*)ether->data;
+    uint8_t i;
+    // save IP addresses from socket
+    for (i = 0; i < IP_ADD_LENGTH; i++)
+    {
+        ipHead->destIp[i] = soc->destIp[i];
+        ipHead->sourceIp[i] = soc->sourceIp[i];
+    }
+
+
+
+}
+
+

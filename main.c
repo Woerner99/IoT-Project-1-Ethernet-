@@ -71,6 +71,9 @@ extern bool etherIsIp(etherHeader *ether);
 extern bool etherIsIpUnicast(etherHeader *ether);
 extern bool etherIsPingRequest(etherHeader *ether);
 extern void etherSendPingResponse(etherHeader *ether);
+extern void fillSocket(etherHeader *ether, uint8_t destIP[]);
+extern void assembleEtherHeader(etherHeader *ether);
+extern void assembleIpHeader(etherHeader *ether);
 
 // Terminal Interface Methods
 extern void initTerminal();
@@ -109,7 +112,7 @@ int main(void)
     clearBuffer(&data);
 
     // Create instance of etherHeader and declare a buffer and udpData
-    uint8_t* udpData;
+    //uint8_t* udpData;
     uint8_t buffer[MAX_PACKET_SIZE];
     etherHeader *ethData = (etherHeader*) buffer;
 
@@ -123,7 +126,7 @@ int main(void)
     etherDisableDhcpMode();
     // Default IP address (assigned from class)
     etherSetIpAddress(192, 168, 1, 111);
-    storeIP(isMQTT,192, 168, 1, 111);
+    storeIP(false,192, 168, 1, 111);
     etherSetIpSubnetMask(255, 255, 255, 0);
     etherSetIpGatewayAddress(192, 168, 1, 111);
     etherInit(ETHER_UNICAST | ETHER_BROADCAST | ETHER_HALFDUPLEX);
@@ -173,8 +176,23 @@ int main(void)
         if(strCompare(cmd, "connect"))
         {
             putsUart0("\t\r\nconnecting...\t\r\n");
-            //etherSendArpResponse(ethData);
+            // Send request, then get packet from MQTT and send response
             etherSendArpRequest(ethData,destIP);
+
+
+            putsUart0("getting packet\t\r\n");
+            etherGetPacket(ethData, MAX_PACKET_SIZE);
+
+            // Now that we have packet we want to save MQTT info to socket structure
+            // MAC of MQTT is "sourceAddress" in ethheader , store in destination
+            // MAC of Red board is "destinationAddress" , store in source
+            fillSocket(ethData,destIP);
+            // Now that we have socket, use it's contents to assemble headers before sending TCP msg
+            assembleEtherHeader(ethData);
+            assembleIpHeader(ethData);
+
+
+
 
             valid2 = true;
             clearBuffer(&data);
