@@ -115,10 +115,9 @@ uint32_t findIndex(char *name)
 
 // On startup check if there is already an IP or MQTT saved to the EEPROM
 // if so, update the flags to prevent multiple entries of IP or MQTT addresses
-bool startupCheck()
+bool startupCheckIP()
 {
     char* ip = "IP_Address";
-    char* mqtt = "MQTT";
 
     currentStatus = notFound;
     uint8_t currentIndex = findIndex(ip);
@@ -128,12 +127,27 @@ bool startupCheck()
         // if IP is already stored in eeprom, don't save default IP address
         return true;
     }
+    else
+    {
+        return false;
+    }
+
+}
+
+bool startupCheckMQTT()
+{
+    char* mqtt = "MQTT";
 
     currentStatus = notFound;
-    currentIndex = findIndex(mqtt);
+    uint8_t currentIndex = findIndex(mqtt);
     if(currentStatus == Found)
     {
         isMQTTset = true;
+        return true;
+    }
+    else
+    {
+        return false;
     }
 
 }

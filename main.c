@@ -91,7 +91,8 @@ extern void writeEeprom(uint16_t add, uint32_t data);
 extern uint32_t readEeprom(uint16_t add);
 extern void flashEeprom();
 extern void storeIP(bool mqtt, uint8_t ip0, uint8_t ip1, uint8_t ip2, uint8_t ip3);
-extern bool startupCheck();
+extern bool startupCheckIP();
+extern bool startupCheckMQTT();
 
 
 //-----------------------------------------------------------------------------
@@ -116,8 +117,7 @@ int main(void)
     uint8_t buffer[MAX_PACKET_SIZE];
     etherHeader *ethData = (etherHeader*) buffer;
 
-    // Read the EEPROM to check for stored IP or MQTT addresses
-    startupCheck();
+
 
     // Init Ethernet Controller
     initEthernet();
@@ -126,10 +126,16 @@ int main(void)
     etherDisableDhcpMode();
     // Default IP address (assigned from class)
     etherSetIpAddress(192, 168, 1, 111);
-    storeIP(false,192, 168, 1, 111);
+    if(!startupCheckIP())
+    {storeIP(false,192, 168, 1, 111);}
     etherSetIpSubnetMask(255, 255, 255, 0);
     etherSetIpGatewayAddress(192, 168, 1, 111);
     etherInit(ETHER_UNICAST | ETHER_BROADCAST | ETHER_HALFDUPLEX);
+
+    // MQTT address, store in EEPROM as default
+    uint8_t destIP[] = {192,168,1,70};
+    if(!startupCheckMQTT())
+    {storeIP(true,destIP[0],destIP[1],destIP[2],destIP[3]);}
 
     // Flash LED
     setPinValue(GREEN_LED, 1);
@@ -172,14 +178,12 @@ int main(void)
         }
 
 
-        uint8_t destIP[] = {192,168,1,70};
+
         if(strCompare(cmd, "connect"))
         {
             putsUart0("\t\r\nconnecting...\t\r\n");
             // Send request, then get packet from MQTT and send response
             etherSendArpRequest(ethData,destIP);
-            etherGetPacket(ethData, MAX_PACKET_SIZE);
-            etherSendArpResponse(ethData);
 
 
             putsUart0("getting packet\t\r\n");
