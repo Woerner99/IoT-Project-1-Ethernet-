@@ -72,8 +72,9 @@ extern bool etherIsIpUnicast(etherHeader *ether);
 extern bool etherIsPingRequest(etherHeader *ether);
 extern void etherSendPingResponse(etherHeader *ether);
 extern void fillSocket(etherHeader *ether, uint8_t destIP[]);
-extern void assembleEtherHeader(etherHeader *ether);
-extern void assembleIpHeader(etherHeader *ether);
+extern void sendTCP(etherHeader *ether);
+//extern void assembleIpHeader(etherHeader *ether);
+//extern void assembleTcpHeader(etherHeader *ether);
 
 // Terminal Interface Methods
 extern void initTerminal();
@@ -117,6 +118,8 @@ int main(void)
     uint8_t buffer[MAX_PACKET_SIZE];
     etherHeader *ethData = (etherHeader*) buffer;
 
+    // Create an instance of the socket 's'
+    //socket s;
 
 
     // Init Ethernet Controller
@@ -194,9 +197,10 @@ int main(void)
             // MAC of Red board is "destinationAddress" , store in source
             fillSocket(ethData,destIP);
             // Now that we have socket, use it's contents to assemble headers before sending TCP msg
-            assembleEtherHeader(ethData);
-            assembleIpHeader(ethData);
-
+            sendTCP(ethData);
+            etherGetPacket(ethData, MAX_PACKET_SIZE);
+            //assembleIpHeader(ethData);
+            //assembleTcpHeader(ethData);
 
 
 

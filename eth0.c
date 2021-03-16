@@ -117,6 +117,16 @@
 #define IP_ADD_LENGTH 4
 #define HW_ADD_LENGTH 6
 
+//these are setting flags in offsetFields in tcp header
+#define FIN     0x0001
+#define SYN     0x0002
+#define PSH     0x0003
+#define RST     0x0004
+#define ACK     0x0010
+#define TCP_DATA_OFFSET 0x5000 //set for 20 bytes
+
+
+
 // ------------------------------------------------------------------------------
 //  Globals
 // ------------------------------------------------------------------------------
@@ -130,6 +140,8 @@ uint8_t ipSubnetMask[IP_ADD_LENGTH] = {255,255,255,0};
 uint8_t ipGwAddress[IP_ADD_LENGTH] = {0,0,0,0};
 bool    dhcpEnabled = true;
 
+uint8_t SYN_NUM = 0;
+uint8_t ACK_NUM = 0;
 socket *soc;
 
 //-----------------------------------------------------------------------------
@@ -530,10 +542,18 @@ void etherCalcIpChecksum(ipHeader *ip)
 }
 
 // Converts from host to network order and vice versa
+// smaller version
 uint16_t htons(uint16_t value)
 {
     return ((value & 0xFF00) >> 8) + ((value & 0x00FF) << 8);
 }
+
+// larger version
+uint16_t htonl(uint32_t value)
+{
+    return ((value & 0xFF00) >> 8) + ((value & 0x00FF) << 8);
+}
+
 #define ntohs htons
 
 // Determines whether packet is IP datagram
@@ -903,11 +923,14 @@ void fillSocket(etherHeader *ether, uint8_t destIP[])
     soc->destPort = 1883;
 }
 
-// Using Assembled Socket, fill etherHeader
-void assembleEtherHeader(etherHeader *ether)
+// Using Assembled Socket, fill etherHeader, ipHeader, and tcpHeader
+// then send TCP message
+void sendTCP(etherHeader *ether)
 {
     socket *soc = (socket*)ether->data;
     uint8_t i;
+    uint16_t tmp16;
+    uint32_t sum = 0;
     // save MAC addresses from socket
     for (i = 0; i < HW_ADD_LENGTH; i++)
     {
@@ -915,11 +938,58 @@ void assembleEtherHeader(etherHeader *ether)
         ether->sourceAddress[i] = soc->sourceHw[i];
     }
     // give frame type of 0x0800 for IP
-    ether->frameType = 0x0800;
+    ether->frameType = htons(0x0800);
+
+    ipHeader *ipHead = (ipHeader*)ether->data;
+    tcpPseudoHeader *tcpPseudo;
+
+    for (i = 0; i < IP_ADD_LENGTH; i++)
+     {
+         ipHead->destIp[i] = soc->destIp[i];
+         ipHead->sourceIp[i] = soc->sourceIp[i];
+         tcpPseudo->destIp[i] = soc->destIp[i];
+         tcpPseudo->sourceIp[i] = soc->sourceIp[i];
+     }
+
+     // Fill remaining fields in the IP header
+     ipHead->revSize = 0x45; // rev size
+     ipHead->typeOfService = 0; // 0
+     ipHead->length = htons(40); // 20 for ipHeader + 20 for tcpheader = 40 b
+     ipHead->id = 0; // random
+     ipHead->flagsAndOffset = htons(0x4000); // 0x4000 = don't fragment bits
+     ipHead->ttl = 128; // random
+     ipHead->protocol = 0x06;
+     etherCalcIpChecksum(ipHead);
+
+
+     tcpHeader *tcpHead = (tcpHeader*)ipHead->data;
+
+
+     tcpHead->sourcePort = htons(soc->sourcePort);
+     tcpHead->destPort = htons(soc->destPort);
+     tcpHead->sequenceNumber = htonl(SYN_NUM); // random for now
+     tcpHead->acknowledgementNumber = htonl(ACK_NUM);
+     tcpHead->offsetFields = htons(TCP_DATA_OFFSET | SYN);
+     tcpHead->windowSize = 60; // random for now
+     //tcpHead->checksum = 20; // needs to be calculated
+     tcpHead->urgentPointer = 0;
+
+     tcpPseudo->tcpSegLength = htons(20); // length for TCP + whatever data being sent
+
+     //etherSumWords(ipHead->sourceIp, 8, &sum);
+     //tmp16 = ipHead->protocol;
+     //sum += (tmp16 & 0xff) << 8;
+     //etherSumWords(&tcpPseudo->tcpSegLength, 2, &sum);
+     //tcpHead->checksum = getEtherChecksum(htons(20)); // needs to be calculated
+     tcpHead->checksum = htons(0x1e0b);
+
+     etherPutPacket(ether, 54); // size = at least 14 bytes etherHeader + 20 bytes ipHeader + 20 bytes tcp
+
+
 
 }
 
-// ***IN PROGRESS***
+// Assemble the IP header with data from the socket
 void assembleIpHeader(etherHeader *ether)
 {
     socket *soc = (socket*)ether->data;
@@ -932,8 +1002,42 @@ void assembleIpHeader(etherHeader *ether)
         ipHead->sourceIp[i] = soc->sourceIp[i];
     }
 
-
+    // Fill remaining fields in the IP header
+    ipHead->revSize = 0x0000;
+    ipHead->typeOfService = 0x00;
+    ipHead->length = 0x0030;
+    ipHead->id = 0x1E1D;
+    ipHead->flagsAndOffset = 0x40;
+    ipHead->ttl = 0x80;
+    ipHead->protocol = 0x06;
+    ipHead->headerChecksum = 0x0000;
 
 }
 
 
+// Assemble the TCP header using data from the socket
+void assembleTcpHeader(etherHeader *ether)
+{
+    socket *soc = (socket*)ether->data;
+    tcpHeader *tcpHead = (tcpHeader*)ether->data;
+
+    tcpHead->sourcePort = soc->sourcePort;
+    tcpHead->destPort = soc->destPort;
+    tcpHead->sequenceNumber = 0x0dd601f4;
+    tcpHead->acknowledgementNumber = 0x00000000;
+    tcpHead->offsetFields = 0x00;
+    tcpHead->windowSize = 0x0000;
+    tcpHead->checksum = 0x0000;
+    tcpHead->urgentPointer = 0x0000;
+
+    etherPutPacket(ether, sizeof(etherHeader) + sizeof(tcpHeader));
+}
+
+/*
+void sendTcpPacket(etherHeader *ether)
+{
+
+
+
+}
+*/
