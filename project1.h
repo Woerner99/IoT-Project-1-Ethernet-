@@ -21,6 +21,31 @@ typedef struct USER_DATA
 } USER_DATA;
 
 
+typedef enum _state
+{
+    IDLE,
+    SEND_ARP,
+    RECV_ARP,
+    SEND_SYN,
+    RECV_SYN_ACK,
+    FIN_WAIT_1,
+    FIN_WAIT_2,
+    CLOSED,
+    // MQTT states
+    CONNECT_MQTT,
+    CONNACK_MQTT,
+    PUBLISH_MQTT,
+    PUBLISH_QOS0_MQTT,
+    PUBLISH_QOS1_MQTT,
+    SUBSCRIBE_MQTT,
+    SUBACK_MQTT,
+    PINGREQ_MQTT,
+    PINGRESP_MQTT,
+    DISCONNECT_MQTT
+} state;
+
+
+
 //-----------------------------------------------------------------------------
 // METHODS FOR MAIN
 //-----------------------------------------------------------------------------
@@ -84,11 +109,25 @@ void reboot()
 // VARIABLES
 //---------------------------------------------------
 
+// flag if 'enter' his hit by user (from terminal interface)
+extern bool isEnter;
 
 // bool to check if a valid cmd
 bool valid2 = false;
-// bool to determine if either MQTT or IP address
+
 bool isMQTT = false;
+bool connect = false;
+
+//these are setting flags in offsetFields in tcp header
+#define FIN     0x0001
+#define SYN     0x0002
+#define PSH     0x0003
+#define RST     0x0004
+#define ACK     0x0010
+
+uint32_t seqNumber = 200;
+uint32_t ackNumber = 0;
+
 
 
 #endif

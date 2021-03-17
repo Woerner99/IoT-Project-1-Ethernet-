@@ -547,14 +547,16 @@ uint16_t htons(uint16_t value)
 {
     return ((value & 0xFF00) >> 8) + ((value & 0x00FF) << 8);
 }
+#define ntohs htons
 
 // larger version
-uint16_t htonl(uint32_t value)
+uint32_t htonl(uint32_t value)
 {
-    return ((value & 0xFF00) >> 8) + ((value & 0x00FF) << 8);
+    return ((0xFF000000 & value) >> 24) + ((0x00FF0000 & value) >> 8) +
+           ((0x0000FF00 & value) << 8) + ((0x000000FF & value) << 24);
 }
 
-#define ntohs htons
+#define ntohl htonl
 
 // Determines whether packet is IP datagram
 bool etherIsIp(etherHeader *ether)
@@ -647,6 +649,23 @@ bool etherIsArpRequest(etherHeader *ether)
     return ok;
 }
 
+// Determines whether packet is ARP Response from wherever
+bool etherIsArpResponse(etherHeader *ether)
+{
+    arpPacket *arp = (arpPacket*)ether->data;
+    bool ok;
+    uint8_t i = 0;
+    ok = (ether->frameType == htons(0x0806));
+    while (ok & (i < IP_ADD_LENGTH))
+    {
+        ok = (arp->destIp[i] == ipAddress[i]);
+        i++;
+    }
+    if (ok)
+        ok = (arp->op == htons(2));
+    return ok;
+}
+
 // Sends an ARP response given the request data
 void etherSendArpResponse(etherHeader *ether)
 {
@@ -702,6 +721,8 @@ void etherSendArpRequest(etherHeader *ether, uint8_t ip[])
     // send packet
     etherPutPacket(ether, sizeof(etherHeader) + sizeof(arpPacket));
 }
+
+
 
 // Determines whether packet is UDP datagram
 // Must be an IP packet
@@ -960,7 +981,7 @@ void sendTCP(etherHeader *ether, socket *s, uint16_t flags, uint32_t sequenceNum
     ipHeader *ipHead = (ipHeader*)ether->data;
     tcpPseudoHeader *tcpPseudo;
     tcpHeader *tcpHead = (tcpHeader*)ipHead->data;
-    uint8_t* payload = (uint8_t*)tcpHead->data + optionsLength;
+    //uint8_t* payload = (uint8_t*)tcpHead->data + optionsLength;
 
     uint8_t i;
     // save MAC addresses from socket

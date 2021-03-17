@@ -42,7 +42,7 @@
 
 // Command checking
 bool valid = false;
-
+bool isEnter =  false;
 
 
 //-----------------------------------------------------------------------------
@@ -138,6 +138,7 @@ void getsUart0(USER_DATA* data)
             {
                 putcUart0('\n');
                 data->buffer[count] = 0;
+                isEnter = true;
                 return;
             }
             else

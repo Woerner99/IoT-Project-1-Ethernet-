@@ -62,6 +62,7 @@ extern bool etherIsDataAvailable();
 extern bool etherIsOverflow();
 extern uint16_t etherGetPacket(etherHeader *ether, uint16_t maxSize);
 extern bool etherIsArpRequest(etherHeader *ether);
+extern bool etherIsArpResponse(etherHeader *ether);
 extern void etherSendArpResponse(etherHeader *ether);
 extern void etherSendArpRequest(etherHeader *ether, uint8_t ip[]);
 extern bool etherIsUdp(etherHeader *ether);
@@ -75,8 +76,9 @@ extern socket fillSocket(etherHeader *ether, uint8_t destIP[]);
 extern void sendTCP(etherHeader *ether, socket *s, uint16_t flags, uint32_t sequenceNumber, int32_t ackNumber,
              uint8_t *options, uint8_t optionsLength, uint16_t dataLength);
 extern bool etherIsTcp(etherHeader* ether);
-//extern void assembleIpHeader(etherHeader *ether);
-//extern void assembleTcpHeader(etherHeader *ether);
+extern uint16_t htons(uint16_t value);
+extern uint32_t htonl(uint32_t value);
+
 
 // Terminal Interface Methods
 extern void initTerminal();
@@ -99,17 +101,6 @@ extern bool startupCheckMQTT();
 extern void getIPfromEEPROM(bool isMQTT, uint8_t *IP0, uint8_t *IP1,uint8_t *IP2, uint8_t *IP3);
 
 
-
-//these are setting flags in offsetFields in tcp header
-#define FIN     0x0001
-#define SYN     0x0002
-#define PSH     0x0003
-#define RST     0x0004
-#define ACK     0x0010
-
-uint32_t seqNumber = 200;
-uint32_t ackNumber = 0;
-
 //-----------------------------------------------------------------------------
 // Main
 //-----------------------------------------------------------------------------
@@ -127,17 +118,16 @@ int main(void)
     USER_DATA data;
     clearBuffer(&data);
 
-    // Create instance of etherHeader and declare a buffer and udpData
-    //uint8_t* udpData;
+    // Create instances of ether, IP, and TCP headers
+    // the IP and TCP headers will be received from MQTT
     uint8_t buffer[MAX_PACKET_SIZE];
     etherHeader *ethData = (etherHeader*) buffer;
+    ipHeader *ipReceieved = (ipHeader*)ethData->data;
+    tcpHeader *tcpReceived = (tcpHeader*)ipReceieved->data;
 
-    // Create an instance of the socket 's'
+    // Create an instance of the socket 's' to later be filled after getting ARP response
     socket s;
 
-
-    // Init Ethernet Controller
-    initEthernet();
 
 //-----------------------------------------------------------------------------
 // Read from EEPROM if IP and MQTT addresses are available and set them
@@ -179,6 +169,8 @@ int main(void)
     }
     else
     {storeIP(true,destIP[0],destIP[1],destIP[2],destIP[3]);}
+//----------------------------------------------------------------------------
+//----------------------------------------------------------------------------
 
     // Flash LED
     setPinValue(GREEN_LED, 1);
@@ -193,151 +185,240 @@ int main(void)
     putsUart0("Author: Sean-Michael Woerner\t\r\n");
     putsUart0("=======================================================\t\r\n");
     putsUart0("for more information type 'help'\t\r\n");
+    putsUart0("\t\r\n\n>");                        // Clear line and new line for next cmd
 
+    char *cmd;
+    bool connect = false;
+    state currentState = IDLE;
+    uint8_t optionsLength = 4;
+    uint8_t options[] = {0x02, 0x04, 0x05, 0xB4, 0x00};
 
     while(true)
     {
 
-        valid2 = false;                               // make false to check for correct commands
-        putsUart0("\t\r\n\n>");                        // Clear line and new line for next cmd
-        getsUart0(&data);                        // Get string from user
-        parseFields(&data);                      // Parse the fields from user input
-
-        char *cmd = getFieldString(&data, 0);  // alternative function for isCommand() used to prevent cmd's with same first letter
-                                               // use this for cmd's with 0 entries
-
-        //-----------------------------------------------------------------------------
-        // COMMANDS FOR USER
-        //-----------------------------------------------------------------------------
-
-
-        // "clear": clear the terminal screen
-
-        if(strCompare(cmd, "clear"))
+        if(kbhitUart0())
         {
-            clearScreen();
-            valid2 = true;
-            clearBuffer(&data);
+            getsUart0(&data);                        // Get string from user
+            cmd = getFieldString(&data, 0);         // save first field as the command just incase (I was getting a bug earlier)
+
+
+            // if user hit's enter, process command
+            if(isEnter)
+            {
+                // reset flag
+                isEnter = false;
+                parseFields(&data);                      // Parse the fields from user input
+                //putsUart0("\t\r\n\n>");                        // Clear line and new line for next cmd
+
+            //-----------------------------------------------------------------------------
+            // COMMANDS FOR USER
+            //-----------------------------------------------------------------------------
+                // "clear": clear the terminal screen
+                if(strCompare(cmd, "clear"))
+                {
+                    clearScreen();
+                    valid2 = true;
+                    clearBuffer(&data);
+                }
+
+
+
+                if(strCompare(cmd, "connect"))
+                {
+                    connect = true;
+                    valid2 = true;
+                    clearBuffer(&data);
+                }
+
+                if(strCompare(cmd, "flash"))
+                {
+                    flashEeprom();
+                    valid2 = true;
+                    clearBuffer(&data);
+                }
+
+                // "help": list available commands and their functions
+                if(strCompare(cmd, "help"))
+                {
+                    putsUart0("Showing list of available terminal commands:\t\r\n");
+                    putsUart0("--------------------------------------------\t\r\n");
+                    putsUart0("(1)reboot----------------------Restarts the microcontroller\t\r\n");
+                    putsUart0("(2)status----------------------Displays the IP and MQTT address, the MQTT connection state, and the TCP FSM state\t\r\n");
+                    putsUart0("(3)set IP <w.x.y.z>------------Sets the IP address and stores this address persistently in EEPROM\t\r\n");
+                    putsUart0("(4)set MQTT <w.x.y.z>----------Sets the IP address of the MQTT broker and stores this address persistently in EEPROM\t\r\n");
+                    putsUart0("(5)publish <TOPIC> <DATA>------Publishes a topic and associated data to the MQTT broker\t\r\n");
+                    putsUart0("(6)subscribe <TOPIC>-----------Subscribes to a topic\t\r\n");
+                    putsUart0("(7)unsubscribe <TOPIC>---------Unsubscribes from a topic\t\r\n");
+                    putsUart0("(8)connect---------------------Sends a connect message to the MQTT broker\t\r\n");
+                    putsUart0("(9)disconnect------------------Disconnects from the MQTT broker\t\r\n");
+                    putsUart0("(10)flash----------------------Flash the EEPROM and erase all contents\t\r\n");
+
+
+                    valid2 = true;
+                    clearBuffer(&data);
+                }
+
+
+
+
+                // *FIXME* goes to initial start of program but gets stuck in ResetISR()
+                if(strCompare(cmd, "reboot"))
+                {
+                    putsUart0("\t\r\nRebooting System ...\t\r\n");
+                    //reboot();
+                    valid2 = true;
+                    clearBuffer(&data);
+                }
+
+
+
+                // set IP address or MQTT address and store to EEPROM
+                if(isCommand(&data, "set", 5))
+                {
+                    char *cmd2 = getFieldString(&data, 1);
+                  if(strCompare(cmd2, "IP"))
+                  {
+                      isMQTT = false;
+                      uint8_t ip0 = getFieldInteger(&data, 2);
+                      uint8_t ip1 = getFieldInteger(&data, 3);
+                      uint8_t ip2 = getFieldInteger(&data, 4);
+                      uint8_t ip3 = getFieldInteger(&data, 5);
+                      // save to EEPROM here using the 4 ints
+                      storeIP(isMQTT,ip0, ip1, ip2, ip3);
+                      // set IP address for connection
+                      etherSetIpAddress(ip0, ip1, ip2, ip3);
+                      etherSetIpGatewayAddress(ip0, ip1, ip2, ip3);
+                  }
+
+
+                  if(strCompare(cmd2, "MQTT"))
+                  {
+                      isMQTT = true;
+                      uint8_t ip0 = getFieldInteger(&data, 2);
+                      uint8_t ip1 = getFieldInteger(&data, 3);
+                      uint8_t ip2 = getFieldInteger(&data, 4);
+                      uint8_t ip3 = getFieldInteger(&data, 5);
+                      // save to EEPROM here using the 4 ints
+                      storeIP(isMQTT,ip0, ip1, ip2, ip3);
+                      destIP[0] = ip0;
+                      destIP[1] = ip1;
+                      destIP[2] = ip2;
+                      destIP[3] = ip3;
+                  }
+                     valid2 = true;
+                     clearBuffer(&data);
+
+                }
+
+                // Displays IP and MQTT addresses, MQTT connection state and TCP FSM state
+                if(strCompare(cmd, "status"))
+                {
+                    listCommands();
+                    putsUart0("\t\r\n\n");
+                    displayConnectionInfo();
+                    valid2 = true;
+                    clearBuffer(&data);
+                }
+                putsUart0("\t\r\n\n>");                        // Clear line and new line for next cmd
+            }
+        }
+
+        // check to see if user wants to connect which will begin traversing through state machine
+        if(connect)
+        {
+            connect = false;    // reset the flag
+            currentState = SEND_ARP;
         }
 
 
-
-        if(strCompare(cmd, "connect"))
+        // Process the states for sending info:
+        switch(currentState)
         {
-            putsUart0("\t\r\nconnecting...\t\r\n");
-            // Send request, then get packet from MQTT and send response
+        case SEND_ARP:
             etherSendArpRequest(ethData,destIP);
+            currentState = RECV_ARP;
+            break;
+        case SEND_SYN:
+            sendTCP(ethData, &s, 0x6000|SYN, seqNumber, ackNumber, 0, 0, 0);
+            currentState = RECV_SYN_ACK;
+            break;
+        }
+
+        // Begin to listen for data
+        if(etherIsDataAvailable())
+        {
+
+            if (etherIsOverflow())
+            {
+                setPinValue(RED_LED, 1);
+                waitMicrosecond(100000);
+                setPinValue(RED_LED, 0);
+            }
 
 
-            putsUart0("getting packet\t\r\n");
             etherGetPacket(ethData, MAX_PACKET_SIZE);
 
-            // Now that we have packet we want to save MQTT info to socket structure
-            // MAC of MQTT is "sourceAddress" in ethheader , store in destination
-            // MAC of Red board is "destinationAddress" , store in source
-            s = fillSocket(ethData,destIP);
-            // Now that we have socket, use it's contents to assemble headers before sending TCP msg
-            sendTCP(ethData, &s, SYN, seqNumber, ackNumber, 0, 0, 0);
-            etherGetPacket(ethData, MAX_PACKET_SIZE);
-            sendTCP(ethData, &s, ACK, seqNumber, ackNumber, 0, 0, 0);
-            //assembleIpHeader(ethData);
-            //assembleTcpHeader(ethData);
+            if (etherIsArpRequest(ethData))
+            {
+                etherSendArpResponse(ethData);
+            }
+
+
+            // Process the states for receiving data from MQTT
+            switch(currentState)
+            {
+            case RECV_ARP:
+                if(etherIsArpResponse(ethData))
+                {
+                    putsUart0("\t\r\nARP response received\t\r\n\n>");
+                    // Record info to socket for sending
+                    s = fillSocket(ethData,destIP);
+                    currentState = SEND_SYN;
+                }
+                break;
+            case RECV_SYN_ACK:
+                if(etherIsIp(ethData) && etherIsTcp(ethData))
+                {
+
+                    if((htons(tcpReceived->offsetFields) & SYN) && (htons(tcpReceived->offsetFields) & ACK))
+                    {
+                        seqNumber++;
+                        ackNumber = htonl(tcpReceived->sequenceNumber) + 1;
+                        sendTCP(ethData, &s, 0x5000 | ACK, seqNumber, ackNumber, 0, 0, 0);
+                        currentState = CONNECT_MQTT;
+                        setPinValue(BLUE_LED, 1);
+                        putsUart0("\t\r\nESTABLISHED STATE\t\r\n");
+                    }
 
 
 
-            valid2 = true;
-            clearBuffer(&data);
-        }
-
-        if(strCompare(cmd, "flash"))
-        {
-            flashEeprom();
-            valid2 = true;
-            clearBuffer(&data);
-        }
-
-        // "help": list available commands and their functions
-        if(strCompare(cmd, "help"))
-        {
-            putsUart0("Showing list of available terminal commands:\t\r\n");
-            putsUart0("--------------------------------------------\t\r\n");
-            putsUart0("(1)reboot----------------------Restarts the microcontroller\t\r\n");
-            putsUart0("(2)status----------------------Displays the IP and MQTT address, the MQTT connection state, and the TCP FSM state\t\r\n");
-            putsUart0("(3)set IP <w.x.y.z>------------Sets the IP address and stores this address persistently in EEPROM\t\r\n");
-            putsUart0("(4)set MQTT <w.x.y.z>----------Sets the IP address of the MQTT broker and stores this address persistently in EEPROM\t\r\n");
-            putsUart0("(5)publish <TOPIC> <DATA>------Publishes a topic and associated data to the MQTT broker\t\r\n");
-            putsUart0("(6)subscribe <TOPIC>-----------Subscribes to a topic\t\r\n");
-            putsUart0("(7)unsubscribe <TOPIC>---------Unsubscribes from a topic\t\r\n");
-            putsUart0("(8)connect---------------------Sends a connect message to the MQTT broker\t\r\n");
-            putsUart0("(9)disconnect------------------Disconnects from the MQTT broker\t\r\n");
-            putsUart0("(10)flash----------------------Flash the EEPROM and erase all contents\t\r\n");
+                }
 
 
-            valid2 = true;
-            clearBuffer(&data);
-        }
+            }
 
 
 
 
-        // *FIXME* goes to initial start of program but gets stuck in ResetISR()
-        if(strCompare(cmd, "reboot"))
-        {
-            putsUart0("\t\r\nRebooting System ...\t\r\n");
-            //reboot();
-            valid2 = true;
-            clearBuffer(&data);
-        }
 
 
 
-        // set IP address or MQTT address and store to EEPROM
-        if(isCommand(&data, "set", 5))
-        {
-            char *cmd2 = getFieldString(&data, 1);
-          if(strCompare(cmd2, "IP"))
-          {
-              isMQTT = false;
-              uint8_t ip0 = getFieldInteger(&data, 2);
-              uint8_t ip1 = getFieldInteger(&data, 3);
-              uint8_t ip2 = getFieldInteger(&data, 4);
-              uint8_t ip3 = getFieldInteger(&data, 5);
-              // save to EEPROM here using the 4 ints
-              storeIP(isMQTT,ip0, ip1, ip2, ip3);
-              // set IP address for connection
-              etherSetIpAddress(ip0, ip1, ip2, ip3);
-              etherSetIpGatewayAddress(ip0, ip1, ip2, ip3);
-          }
 
 
-          if(strCompare(cmd2, "MQTT"))
-          {
-              isMQTT = true;
-              uint8_t ip0 = getFieldInteger(&data, 2);
-              uint8_t ip1 = getFieldInteger(&data, 3);
-              uint8_t ip2 = getFieldInteger(&data, 4);
-              uint8_t ip3 = getFieldInteger(&data, 5);
-              // save to EEPROM here using the 4 ints
-              storeIP(isMQTT,ip0, ip1, ip2, ip3);
-              destIP[0] = ip0;
-              destIP[1] = ip1;
-              destIP[2] = ip2;
-              destIP[3] = ip3;
-          }
-             valid2 = true;
-             clearBuffer(&data);
+
+
+
+
+
 
         }
 
-        // Displays IP and MQTT addresses, MQTT connection state and TCP FSM state
-        if(strCompare(cmd, "status"))
-        {
-            listCommands();
-            putsUart0("\t\r\n\n");
-            displayConnectionInfo();
-            valid2 = true;
-            clearBuffer(&data);
-        }
+
+
+
+
+
+
 
 
 
