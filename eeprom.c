@@ -311,45 +311,7 @@ void learnInstruction(char* name, uint8_t add, uint8_t data)
     writeEeprom(0, listSize + 1);
 }
 
-// learn a new rule that does a specific function on a desired hardware device
-void learnRule(char* name, char* dev, char* action)
-{
-    uint32_t listSize = readEeprom(0);
-    uint8_t q;
-    uint32_t temp[(NAME_LENGTH/4) + 1];
-    uint16_t format = (listSize * ((NAME_LENGTH/4)+1)) + 1;
 
-    putsUart0("Learning Rule...\t\r\n");
-
-    // Clear Eeprom
-    for (q = 0; q < (NAME_LENGTH/4) + 1; q++)
-    {
-        temp[q] = 0;
-    }
-    // save name
-    for (q = 0; q < (NAME_LENGTH) && name[q] != '\0'; q++)
-    {
-        temp[q/4] |= name[q] << ((4-1) - (q%4)) * 8;
-    }
-
-
-    for (q = 0; q < (NAME_LENGTH) && dev[q] != '\0'; q++)
-    {
-        temp[q/4] |= dev[q] << ((4-1) - (q%4)) * 8;
-    }
-
-    for (q = 0; q < (NAME_LENGTH) && action[q] != '\0'; q++)
-    {
-        temp[q/4] |= action[q] << ((4-1) - (q%4)) * 8;
-    }
-
-
-
-    // get to next spot in list for next entry in the Eeprom
-    writeEeprom(0, listSize + 1);
-
-
-}
 
 void infoIndex(uint16_t index)
 {
@@ -446,6 +408,71 @@ void infoName(char *name)
 }
 
 
+void getIPfromEEPROM(bool isMQTT,uint8_t* IP0, uint8_t* IP1, uint8_t* IP2, uint8_t* IP3)
+{
+    uint8_t ip0,ip1,ip2,ip3;
+    uint8_t IP[] = {0,0,0,0};
+    uint8_t count = 0;
+    uint32_t size;
+    uint8_t position = 0;
+    uint16_t start;
+    uint8_t i = 0;
+    uint32_t temp[(NAME_LENGTH / 4) + 1];
+    char name[NAME_LENGTH];
+    size = readEeprom(0);
+
+    for (position = 0; position < size; position = position + 1)
+       {
+           start = (position * ((NAME_LENGTH / 4) + 1)) + 1;
+
+           //clear the temp array
+           for (i = 0; i < (NAME_LENGTH / 4) + 1; i++)
+           {
+               temp[i] = 0;
+           }
+           //this temp holds the extraction of the name
+
+           for (i = 0; i < (NAME_LENGTH / 4) + 1; i++)
+           {
+               temp[i] = readEeprom(start + i);
+           }
+           for (i = 0; i < NAME_LENGTH; i++)
+           {
+               name[i] = (temp[i / 4] << ((i % 4)) * 8) >> 3 * 8;
+
+           }
+           if (name[0] != '\0')
+           {
+
+
+               // IP is split up into 4 ints and shifted accordingly to be stored properly
+               uint8_t ip0 = (temp[(NAME_LENGTH / 4)]) >> 24;
+               uint8_t ip1 = (temp[(NAME_LENGTH / 4)] << 8) >> 24;
+               uint8_t ip2 = (temp[(NAME_LENGTH / 4)] << 16) >> 24;
+               uint8_t ip3 = (temp[(NAME_LENGTH / 4)] << 24) >> 24;
+               if(count==0 && !isMQTT)
+               {
+                   *IP0 = ip0;
+                   *IP1 = ip1;
+                   *IP2 = ip2;
+                   *IP3 = ip3;
+               }
+               if(count==1 && isMQTT)
+               {
+                   *IP0 = ip0;
+                   *IP1 = ip1;
+                   *IP2 = ip2;
+                   *IP3 = ip3;
+               }
+               count++;
+           }
+
+       }
+
+
+
+
+}
 
 void listCommands()
 {

@@ -71,8 +71,10 @@ extern bool etherIsIp(etherHeader *ether);
 extern bool etherIsIpUnicast(etherHeader *ether);
 extern bool etherIsPingRequest(etherHeader *ether);
 extern void etherSendPingResponse(etherHeader *ether);
-extern void fillSocket(etherHeader *ether, uint8_t destIP[]);
-extern void sendTCP(etherHeader *ether);
+extern socket fillSocket(etherHeader *ether, uint8_t destIP[]);
+extern void sendTCP(etherHeader *ether, socket *s, uint16_t flags, uint32_t sequenceNumber, int32_t ackNumber,
+             uint8_t *options, uint8_t optionsLength, uint16_t dataLength);
+extern bool etherIsTcp(etherHeader* ether);
 //extern void assembleIpHeader(etherHeader *ether);
 //extern void assembleTcpHeader(etherHeader *ether);
 
@@ -94,7 +96,19 @@ extern void flashEeprom();
 extern void storeIP(bool mqtt, uint8_t ip0, uint8_t ip1, uint8_t ip2, uint8_t ip3);
 extern bool startupCheckIP();
 extern bool startupCheckMQTT();
+extern void getIPfromEEPROM(bool isMQTT, uint8_t *IP0, uint8_t *IP1,uint8_t *IP2, uint8_t *IP3);
 
+
+
+//these are setting flags in offsetFields in tcp header
+#define FIN     0x0001
+#define SYN     0x0002
+#define PSH     0x0003
+#define RST     0x0004
+#define ACK     0x0010
+
+uint32_t seqNumber = 200;
+uint32_t ackNumber = 0;
 
 //-----------------------------------------------------------------------------
 // Main
@@ -119,25 +133,51 @@ int main(void)
     etherHeader *ethData = (etherHeader*) buffer;
 
     // Create an instance of the socket 's'
-    //socket s;
+    socket s;
 
 
     // Init Ethernet Controller
     initEthernet();
+
+//-----------------------------------------------------------------------------
+// Read from EEPROM if IP and MQTT addresses are available and set them
+//-----------------------------------------------------------------------------
+    // ip values returned by EEPROM after found
+    uint8_t IP0, IP1, IP2, IP3;
+
     // Set MAC address
     etherSetMacAddress(2,3,4,5,6,111);
     etherDisableDhcpMode();
-    // Default IP address (assigned from class)
-    etherSetIpAddress(192, 168, 1, 111);
-    if(!startupCheckIP())
-    {storeIP(false,192, 168, 1, 111);}
+
+    // read from EEPROM and set IP address saved in EEPROM
+    if(startupCheckIP())
+    {
+        getIPfromEEPROM(false, &IP0, &IP1, &IP2, &IP3);
+        etherSetIpAddress(IP0, IP1, IP2, IP3);
+        //etherSetIpAddress(192, 168, 1, 111); // Default IP address (assigned from class)
+        etherSetIpGatewayAddress(IP0, IP1, IP2, IP3);
+    }
+    else  // if EEPROM empty, write default address and set
+    {
+        storeIP(false,192, 168, 1, 111);
+        etherSetIpAddress(192,168,1,111);
+        etherSetIpGatewayAddress(192, 168, 1, 111);
+    }
+
     etherSetIpSubnetMask(255, 255, 255, 0);
-    etherSetIpGatewayAddress(192, 168, 1, 111);
     etherInit(ETHER_UNICAST | ETHER_BROADCAST | ETHER_HALFDUPLEX);
 
     // MQTT address, store in EEPROM as default
     uint8_t destIP[] = {192,168,1,70};
-    if(!startupCheckMQTT())
+    if(startupCheckMQTT())
+    {
+        getIPfromEEPROM(true, &IP0, &IP1, &IP2, &IP3);
+        destIP[0] = IP0;
+        destIP[1] = IP1;
+        destIP[2] = IP2;
+        destIP[3] = IP3;
+    }
+    else
     {storeIP(true,destIP[0],destIP[1],destIP[2],destIP[3]);}
 
     // Flash LED
@@ -195,10 +235,11 @@ int main(void)
             // Now that we have packet we want to save MQTT info to socket structure
             // MAC of MQTT is "sourceAddress" in ethheader , store in destination
             // MAC of Red board is "destinationAddress" , store in source
-            fillSocket(ethData,destIP);
+            s = fillSocket(ethData,destIP);
             // Now that we have socket, use it's contents to assemble headers before sending TCP msg
-            sendTCP(ethData);
+            sendTCP(ethData, &s, SYN, seqNumber, ackNumber, 0, 0, 0);
             etherGetPacket(ethData, MAX_PACKET_SIZE);
+            sendTCP(ethData, &s, ACK, seqNumber, ackNumber, 0, 0, 0);
             //assembleIpHeader(ethData);
             //assembleTcpHeader(ethData);
 
@@ -265,6 +306,7 @@ int main(void)
               storeIP(isMQTT,ip0, ip1, ip2, ip3);
               // set IP address for connection
               etherSetIpAddress(ip0, ip1, ip2, ip3);
+              etherSetIpGatewayAddress(ip0, ip1, ip2, ip3);
           }
 
 
@@ -277,6 +319,10 @@ int main(void)
               uint8_t ip3 = getFieldInteger(&data, 5);
               // save to EEPROM here using the 4 ints
               storeIP(isMQTT,ip0, ip1, ip2, ip3);
+              destIP[0] = ip0;
+              destIP[1] = ip1;
+              destIP[2] = ip2;
+              destIP[3] = ip3;
           }
              valid2 = true;
              clearBuffer(&data);
