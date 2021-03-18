@@ -86,7 +86,8 @@ extern void fillMQTTConnectPacket(uint8_t *packet, uint8_t flags, char *clientID
                                   uint16_t *packetLength);
 extern bool mqttIsConnack(uint8_t *packet);
 extern void fillMQTTPacket(uint8_t *packet, packetType type, uint16_t *packetLength);
-extern void printState(state currentState);
+extern void fillMQTTPublishPacket(uint8_t *packet, char *topic, uint16_t packetID, uint8_t qos, char *payload, uint16_t *packetLength);
+extern void printState(state mqttState);
 
 
 // Terminal Interface Methods
@@ -146,6 +147,9 @@ int main(void)
     // ip values returned by EEPROM after found
     uint8_t IP0, IP1, IP2, IP3;
 
+    // connect flag before reading MQTT address from EEPROM
+    bool connect = false;
+
     // Set MAC address
     etherSetMacAddress(2,3,4,5,6,111);
     etherDisableDhcpMode();
@@ -168,7 +172,7 @@ int main(void)
     etherSetIpSubnetMask(255, 255, 255, 0);
     etherInit(ETHER_UNICAST | ETHER_BROADCAST | ETHER_HALFDUPLEX);
 
-    // MQTT address, store in EEPROM as default
+    // MQTT address, store in EEPROM as default if nothing is set
     uint8_t destIP[] = {192,168,1,70};
     if(startupCheckMQTT())
     {
@@ -177,9 +181,15 @@ int main(void)
         destIP[1] = IP1;
         destIP[2] = IP2;
         destIP[3] = IP3;
+        // try to connect since we have MQTT address
+        connect = true;
     }
     else
-    {storeIP(true,destIP[0],destIP[1],destIP[2],destIP[3]);}
+    {
+        storeIP(true,destIP[0],destIP[1],destIP[2],destIP[3]);
+        // try to connect since we have MQTT address
+        connect = true;
+    }
 //----------------------------------------------------------------------------
 //----------------------------------------------------------------------------
 
@@ -198,9 +208,12 @@ int main(void)
     putsUart0("for more information type 'help'\t\r\n");
     putsUart0("\t\r\n\n>");                        // Clear line and new line for next cmd
 
-    char *cmd;
-    bool connect = false;
-    state currentState = IDLE;
+    char *cmd;          // first data field
+    char *cmd2;         // second data field
+    char *topic;        // topic to subscribe/publish to
+    char *data_msg;     // message to be published with given topic
+
+    state mqttState = IDLE;
     uint16_t size = 0;              // size of payload
     uint8_t optionsLength = 4;
     uint8_t options[] = {0x02, 0x04, 0x05, 0xB4, 0x00};
@@ -242,7 +255,7 @@ int main(void)
 
                 if(strCompare(cmd, "disconnect"))
                 {
-                    currentState = DISCONNECT_MQTT;
+                    mqttState = DISCONNECT_MQTT;
                     clearBuffer(&data);
                 }
 
@@ -273,6 +286,15 @@ int main(void)
                 }
 
 
+                // publish <TOPIC> <DATA> to MQTT broker
+                if(isCommand(&data, "publish",2))
+                {
+                    topic = getFieldString(&data, 1);
+                    data_msg = getFieldString(&data, 2);
+
+                    mqttState = PUBLISH_MQTT;
+                    clearBuffer(&data);
+                }
 
 
                 // *FIXME* goes to initial start of program but gets stuck in ResetISR()
@@ -288,7 +310,7 @@ int main(void)
                 // set IP address or MQTT address and store to EEPROM
                 if(isCommand(&data, "set", 5))
                 {
-                    char *cmd2 = getFieldString(&data, 1);
+                    cmd2 = getFieldString(&data, 1);
                   if(strCompare(cmd2, "IP"))
                   {
                       isMQTT = false;
@@ -329,7 +351,7 @@ int main(void)
                     listCommands();
                     putsUart0("\t\r\n\n");
                     displayConnectionInfo();
-                    printState(currentState);
+                    printState(mqttState);
 
                     clearBuffer(&data);
                 }
@@ -340,43 +362,58 @@ int main(void)
         // check to see if user wants to connect which will begin traversing through state machine
         if(connect)
         {
-            connect = false;    // reset the flag
-            currentState = SEND_ARP;
+            connect = false;            // reset the flag
+            mqttState = SEND_ARP;    // begin to connect by sending ARP message to MQTT
         }
 
 
         // Process the states for sending info:
-        switch(currentState)
+        switch(mqttState)
         {
         case SEND_ARP:
             etherSendArpRequest(ethData,destIP);
-            currentState = RECV_ARP;
+            mqttState = RECV_ARP;
             break;
         case SEND_SYN:
             sendTCP(ethData, &s, 0x6000|SYN, seqNumber, ackNumber, 0, 0, 0);
-            currentState = RECV_SYN_ACK;
+            mqttState = RECV_SYN_ACK;
             break;
         case CONNECT_MQTT:
             fillMQTTConnectPacket(tcpReceived->data, CLEAN_SESSION, "test", 4, &size);
-            sendTCP(ethData, &s, 0x50000 | PSH | ACK, seqNumber, ackNumber, 0, 0, size);
-            currentState = CONNACK_MQTT;
+            sendTCP(ethData, &s, 0x5000 | PSH | ACK, seqNumber, ackNumber, 0, 0, size);
+            mqttState = CONNACK_MQTT;
 
+        case PUBLISH_MQTT:
+            fillMQTTPublishPacket(tcpReceived->data, topic, packetID, qos, data_msg,  &size);
+            sendTCP(ethData, &s, 0x5000 | PSH | ACK, seqNumber, ackNumber, 0, 0, size);
+            switch(qos)
+            {
+            case QOS0:
+                mqttState = PUBLISH_QOS0_MQTT;
+                break;
+            case QOS1:
+                mqttState = PUBLISH_QOS1_MQTT;
+                break;
+            case QOS2:
+                //mqttState = PUBLISH_QOS2_MQTT;
+                break;
+            }
 
         case DISCONNECT_MQTT:
             fillMQTTPacket(tcpReceived->data, DISCONNECT, &size);
             sendTCP(ethData, &s, 0x5000 | PSH | FIN | ACK, seqNumber, ackNumber, 0, 0, size);
-            currentState = FIN_WAIT_1;
+            mqttState = FIN_WAIT_1;
             break;
 
         case CLOSED:
             // Reset variable and turn off BLUE LED
-            putsUart0("\t\r\nConnection closed!\t\r\n");
+            putsUart0("\t\r\nCONNECTION CLOSED!\t\r\n");
             setPinValue(BLUE_LED,0);
             ackNumber = 0;
             seqNumber = 200;
             size = 0;
             connect = false;
-            currentState = IDLE;
+            mqttState = IDLE;
             break;
         }
 
@@ -401,7 +438,7 @@ int main(void)
 
 
             // Process the states for receiving data from MQTT
-            switch(currentState)
+            switch(mqttState)
             {
             case RECV_ARP:
                 if(etherIsArpResponse(ethData))
@@ -409,7 +446,7 @@ int main(void)
                     putsUart0("\t\r\nARP response received\t\r\n\n>");
                     // Record info to socket for sending
                     s = fillSocket(ethData,destIP);
-                    currentState = SEND_SYN;
+                    mqttState = SEND_SYN;
                 }
                 break;
             case RECV_SYN_ACK:
@@ -421,24 +458,42 @@ int main(void)
                         seqNumber++;
                         ackNumber = htonl(tcpReceived->sequenceNumber) + 1;
                         sendTCP(ethData, &s, 0x5000 | ACK, seqNumber, ackNumber, 0, 0, 0);
-                        currentState = CONNECT_MQTT;
+                        mqttState = CONNECT_MQTT;
                         setPinValue(BLUE_LED, 1);
-                        putsUart0("\t\r\nESTABLISHED STATE\t\r\n>");
+                        putsUart0("\t\r\nESTABLISHED STATE\t\r\n\n>");
                     }
                 }
 
             case CONNACK_MQTT:
+                /*
                 if(!mqttIsConnack(tcpReceived->data))
                 {
                     putsUart0("\t\r\nCONNACK MQTT error!\t\r\n");
-                    currentState = CONNACK_MQTT;
+                    mqttState = CONNACK_MQTT;
                 }
-
+                */
                 seqNumber += size;
                 ackNumber = htonl(tcpReceived->sequenceNumber) + 4;
                 sendTCP(ethData, &s, 0x5000 | ACK, seqNumber, ackNumber, 0, 0, 0);
-                currentState = IDLE;
+                mqttState = IDLE;
                 break;
+
+            case PUBLISH_QOS0_MQTT:
+                seqNumber += size;
+                break;
+            case PUBLISH_QOS1_MQTT:
+                /*
+                if(!mqttIsPuback(receivedTcpHeader->data, packetID))
+                  {
+                      putsUart0("State: PUBLISH_QOS1_MQTT error\n");
+                      mqttState = PUBLISH_QOS1_MQTT;
+                  }
+                  */
+                seqNumber += size;
+                ackNumber = htonl(tcpReceived->sequenceNumber) + 4;
+                sendTCP(ethData, &s, 0x5000 | ACK, seqNumber, ackNumber, 0, 0, 0);
+                mqttState = IDLE;
+
             case FIN_WAIT_1:
                 // Handle IP datagram
                if(etherIsIp(ethData) && etherIsTcp(ethData))
@@ -446,7 +501,7 @@ int main(void)
                    // Check if this is the ACK of FIN
                    if(htons(tcpReceived->offsetFields) & ACK)
                    {
-                       currentState = FIN_WAIT_2;
+                       mqttState = FIN_WAIT_2;
                    }
                    else
                    {
@@ -458,14 +513,14 @@ int main(void)
                 // Handle IP datagram
                 if(etherIsIp(ethData) && etherIsTcp(ethData))
                 {
-                    // Check if FIN, ACK
+                    // Check if FIN, ACK received
                     if((htons(tcpReceived->offsetFields) & FIN) && (htons(tcpReceived->offsetFields) & ACK))
                     {
                         seqNumber += size + 1;
                         ackNumber = htonl(tcpReceived->sequenceNumber) + 1;
                         sendTCP(ethData, &s, 0x5000 | ACK, seqNumber, ackNumber, 0, 0, 0);
                         waitMicrosecond(200000);
-                        currentState = CLOSED;
+                        mqttState = CLOSED;
                     }
                     else
                     {

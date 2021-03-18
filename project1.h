@@ -110,6 +110,9 @@ bool connect = false;
 uint32_t seqNumber = 200;
 uint32_t ackNumber = 0;
 
+uint8_t qos = QOS1;
+uint16_t packetID = 0x1234;
+
 
 
 #endif

@@ -34,8 +34,11 @@
 #define PASSWORD_FLAG 64
 #define USERNAME_FLAG 128
 
+#define QOS0                    0
+#define QOS1                    2
+#define QOS2                    4
 
-
+// States for the connection state machine
 typedef enum _state
 {
     IDLE = 0,

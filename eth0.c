@@ -981,7 +981,6 @@ void sendTCP(etherHeader *ether, socket *s, uint16_t flags, uint32_t sequenceNum
     ipHeader *ipHead = (ipHeader*)ether->data;
     tcpPseudoHeader *tcpPseudo;
     tcpHeader *tcpHead = (tcpHeader*)ipHead->data;
-    //uint8_t* payload = (uint8_t*)tcpHead->data + optionsLength;
 
     uint8_t i;
     // save MAC addresses from socket
@@ -1033,7 +1032,7 @@ void sendTCP(etherHeader *ether, socket *s, uint16_t flags, uint32_t sequenceNum
      etherSumWords(&tmp16, 2, &sum);
 
 
-     // Sum TCP header and data
+     // Sum TCP header and data to get TCP checksum
      etherSumWords(tcpHead, tcpHeaderLength + dataLength, &sum);
      tcpHead->checksum = getEtherChecksum(sum);
 
@@ -1042,6 +1041,7 @@ void sendTCP(etherHeader *ether, socket *s, uint16_t flags, uint32_t sequenceNum
      ipHead->length = htons(sizeof(ipHeader) + tcpHeaderLength + dataLength);
      etherCalcIpChecksum(ipHead);
 
+     // Send TCP packet
      etherPutPacket(ether, sizeof(etherHeader) + sizeof(ipHeader) + tcpHeaderLength + dataLength);
 }
 
