@@ -2,6 +2,9 @@
 #define __PROJECT1__H
 
 
+
+#include "tm4c123gh6pm.h"
+
 //-----------------------------------------------------------------------------
 // Serial Communication defines and functions
 //-----------------------------------------------------------------------------
@@ -20,29 +23,6 @@ typedef struct USER_DATA
 
 } USER_DATA;
 
-
-typedef enum _state
-{
-    IDLE,
-    SEND_ARP,
-    RECV_ARP,
-    SEND_SYN,
-    RECV_SYN_ACK,
-    FIN_WAIT_1,
-    FIN_WAIT_2,
-    CLOSED,
-    // MQTT states
-    CONNECT_MQTT,
-    CONNACK_MQTT,
-    PUBLISH_MQTT,
-    PUBLISH_QOS0_MQTT,
-    PUBLISH_QOS1_MQTT,
-    SUBSCRIBE_MQTT,
-    SUBACK_MQTT,
-    PINGREQ_MQTT,
-    PINGRESP_MQTT,
-    DISCONNECT_MQTT
-} state;
 
 
 
@@ -96,6 +76,8 @@ void clearBuffer(USER_DATA* data)
 
 
 }
+
+
 
 
 void reboot()

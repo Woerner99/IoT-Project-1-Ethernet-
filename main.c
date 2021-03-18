@@ -31,11 +31,13 @@ Target Platform: EK-TM4C123GXL Evaluation Board
 //-----------------------------------------------------------------------------
 #include <stdint.h>
 #include <stdbool.h>
+#include <stdio.h>
 #include "tm4c123gh6pm.h"
 #include "clock.h"
 #include "eeprom.h"
 #include "eth0.h"
 #include "gpio.h"
+#include "mqtt.h"
 #include "project1.h"
 #include "spi0.h"
 #include "uart0.h"
@@ -79,6 +81,13 @@ extern bool etherIsTcp(etherHeader* ether);
 extern uint16_t htons(uint16_t value);
 extern uint32_t htonl(uint32_t value);
 
+// MQTT methods
+extern void fillMQTTConnectPacket(uint8_t *packet, uint8_t flags, char *clientID, uint16_t clientIDLength,
+                                  uint16_t *packetLength);
+extern bool mqttIsConnack(uint8_t *packet);
+extern void fillMQTTPacket(uint8_t *packet, packetType type, uint16_t *packetLength);
+extern void printState(state currentState);
+
 
 // Terminal Interface Methods
 extern void initTerminal();
@@ -100,6 +109,8 @@ extern bool startupCheckIP();
 extern bool startupCheckMQTT();
 extern void getIPfromEEPROM(bool isMQTT, uint8_t *IP0, uint8_t *IP1,uint8_t *IP2, uint8_t *IP3);
 
+// Wait methods
+extern void waitMicrosecond(uint32_t us);
 
 //-----------------------------------------------------------------------------
 // Main
@@ -190,6 +201,7 @@ int main(void)
     char *cmd;
     bool connect = false;
     state currentState = IDLE;
+    uint16_t size = 0;              // size of payload
     uint8_t optionsLength = 4;
     uint8_t options[] = {0x02, 0x04, 0x05, 0xB4, 0x00};
 
@@ -217,7 +229,6 @@ int main(void)
                 if(strCompare(cmd, "clear"))
                 {
                     clearScreen();
-                    valid2 = true;
                     clearBuffer(&data);
                 }
 
@@ -226,14 +237,18 @@ int main(void)
                 if(strCompare(cmd, "connect"))
                 {
                     connect = true;
-                    valid2 = true;
+                    clearBuffer(&data);
+                }
+
+                if(strCompare(cmd, "disconnect"))
+                {
+                    currentState = DISCONNECT_MQTT;
                     clearBuffer(&data);
                 }
 
                 if(strCompare(cmd, "flash"))
                 {
                     flashEeprom();
-                    valid2 = true;
                     clearBuffer(&data);
                 }
 
@@ -254,7 +269,6 @@ int main(void)
                     putsUart0("(10)flash----------------------Flash the EEPROM and erase all contents\t\r\n");
 
 
-                    valid2 = true;
                     clearBuffer(&data);
                 }
 
@@ -266,7 +280,6 @@ int main(void)
                 {
                     putsUart0("\t\r\nRebooting System ...\t\r\n");
                     //reboot();
-                    valid2 = true;
                     clearBuffer(&data);
                 }
 
@@ -305,7 +318,7 @@ int main(void)
                       destIP[2] = ip2;
                       destIP[3] = ip3;
                   }
-                     valid2 = true;
+
                      clearBuffer(&data);
 
                 }
@@ -316,7 +329,8 @@ int main(void)
                     listCommands();
                     putsUart0("\t\r\n\n");
                     displayConnectionInfo();
-                    valid2 = true;
+                    printState(currentState);
+
                     clearBuffer(&data);
                 }
                 putsUart0("\t\r\n\n>");                        // Clear line and new line for next cmd
@@ -341,6 +355,28 @@ int main(void)
         case SEND_SYN:
             sendTCP(ethData, &s, 0x6000|SYN, seqNumber, ackNumber, 0, 0, 0);
             currentState = RECV_SYN_ACK;
+            break;
+        case CONNECT_MQTT:
+            fillMQTTConnectPacket(tcpReceived->data, CLEAN_SESSION, "test", 4, &size);
+            sendTCP(ethData, &s, 0x50000 | PSH | ACK, seqNumber, ackNumber, 0, 0, size);
+            currentState = CONNACK_MQTT;
+
+
+        case DISCONNECT_MQTT:
+            fillMQTTPacket(tcpReceived->data, DISCONNECT, &size);
+            sendTCP(ethData, &s, 0x5000 | PSH | FIN | ACK, seqNumber, ackNumber, 0, 0, size);
+            currentState = FIN_WAIT_1;
+            break;
+
+        case CLOSED:
+            // Reset variable and turn off BLUE LED
+            putsUart0("\t\r\nConnection closed!\t\r\n");
+            setPinValue(BLUE_LED,0);
+            ackNumber = 0;
+            seqNumber = 200;
+            size = 0;
+            connect = false;
+            currentState = IDLE;
             break;
         }
 
@@ -387,12 +423,60 @@ int main(void)
                         sendTCP(ethData, &s, 0x5000 | ACK, seqNumber, ackNumber, 0, 0, 0);
                         currentState = CONNECT_MQTT;
                         setPinValue(BLUE_LED, 1);
-                        putsUart0("\t\r\nESTABLISHED STATE\t\r\n");
+                        putsUart0("\t\r\nESTABLISHED STATE\t\r\n>");
                     }
-
-
-
                 }
+
+            case CONNACK_MQTT:
+                if(!mqttIsConnack(tcpReceived->data))
+                {
+                    putsUart0("\t\r\nCONNACK MQTT error!\t\r\n");
+                    currentState = CONNACK_MQTT;
+                }
+
+                seqNumber += size;
+                ackNumber = htonl(tcpReceived->sequenceNumber) + 4;
+                sendTCP(ethData, &s, 0x5000 | ACK, seqNumber, ackNumber, 0, 0, 0);
+                currentState = IDLE;
+                break;
+            case FIN_WAIT_1:
+                // Handle IP datagram
+               if(etherIsIp(ethData) && etherIsTcp(ethData))
+               {
+                   // Check if this is the ACK of FIN
+                   if(htons(tcpReceived->offsetFields) & ACK)
+                   {
+                       currentState = FIN_WAIT_2;
+                   }
+                   else
+                   {
+                       putsUart0("\t\r\nFIN_WAIT_1 error! \t\r\n");
+                   }
+               }
+               break;
+            case FIN_WAIT_2:
+                // Handle IP datagram
+                if(etherIsIp(ethData) && etherIsTcp(ethData))
+                {
+                    // Check if FIN, ACK
+                    if((htons(tcpReceived->offsetFields) & FIN) && (htons(tcpReceived->offsetFields) & ACK))
+                    {
+                        seqNumber += size + 1;
+                        ackNumber = htonl(tcpReceived->sequenceNumber) + 1;
+                        sendTCP(ethData, &s, 0x5000 | ACK, seqNumber, ackNumber, 0, 0, 0);
+                        waitMicrosecond(200000);
+                        currentState = CLOSED;
+                    }
+                    else
+                    {
+                        putsUart0("\t\r\nFIN_WAIT_2 error! \t\r\n");
+                    }
+                }
+                break;
+
+
+
+
 
 
             }
