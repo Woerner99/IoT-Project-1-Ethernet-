@@ -88,6 +88,7 @@ extern bool mqttIsConnack(uint8_t *packet);
 extern void fillMQTTPacket(uint8_t *packet, packetType type, uint16_t *packetLength);
 extern void fillMQTTPublishPacket(uint8_t *packet, char *topic, uint16_t packetID, uint8_t qos, char *payload, uint16_t *packetLength);
 extern void printState(state mqttState);
+extern bool mqttIsPingResponse(uint8_t* packet);
 
 
 // Terminal Interface Methods
@@ -301,7 +302,8 @@ int main(void)
                 if(strCompare(cmd, "reboot"))
                 {
                     putsUart0("\t\r\nRebooting System ...\t\r\n");
-                    //reboot();
+                    waitMicrosecond(200000);
+                    reboot();
                     clearBuffer(&data);
                 }
 
@@ -382,7 +384,7 @@ int main(void)
             fillMQTTConnectPacket(tcpReceived->data, CLEAN_SESSION, "test", 4, &size);
             sendTCP(ethData, &s, 0x5000 | PSH | ACK, seqNumber, ackNumber, 0, 0, size);
             mqttState = CONNACK_MQTT;
-
+            break;
         case PUBLISH_MQTT:
             fillMQTTPublishPacket(tcpReceived->data, topic, packetID, qos, data_msg,  &size);
             sendTCP(ethData, &s, 0x5000 | PSH | ACK, seqNumber, ackNumber, 0, 0, size);
@@ -398,7 +400,11 @@ int main(void)
                 //mqttState = PUBLISH_QOS2_MQTT;
                 break;
             }
-
+        case PINGREQ_MQTT:
+            fillMQTTPacket(tcpReceived->data, PINGREQ, &size);
+            sendTCP(ethData, &s, 0x5000 | PSH | ACK, seqNumber, ackNumber, 0, 0, size);
+            mqttState = PINGRESP_MQTT;
+            break;
         case DISCONNECT_MQTT:
             fillMQTTPacket(tcpReceived->data, DISCONNECT, &size);
             sendTCP(ethData, &s, 0x5000 | PSH | FIN | ACK, seqNumber, ackNumber, 0, 0, size);
@@ -463,7 +469,7 @@ int main(void)
                         putsUart0("\t\r\nESTABLISHED STATE\t\r\n\n>");
                     }
                 }
-
+                break;
             case CONNACK_MQTT:
                 /*
                 if(!mqttIsConnack(tcpReceived->data))
@@ -493,6 +499,7 @@ int main(void)
                 ackNumber = htonl(tcpReceived->sequenceNumber) + 4;
                 sendTCP(ethData, &s, 0x5000 | ACK, seqNumber, ackNumber, 0, 0, 0);
                 mqttState = IDLE;
+                break;
 
             case FIN_WAIT_1:
                 // Handle IP datagram
@@ -529,6 +536,19 @@ int main(void)
                 }
                 break;
 
+            case PINGRESP_MQTT:
+                if(!mqttIsPingResponse(tcpReceived->data))
+                {
+                    //putsUart0("State: PINGRESP_MQTT -> No ping response\n");
+                    mqttState = PINGRESP_MQTT;
+                }
+                // Take the size of the previous data sent in bytes and add it to the sequence number
+                seqNumber += size;
+                // Here, 4 is the size of the connack packet
+                ackNumber = htonl(tcpReceived->sequenceNumber) + 2;
+                sendTCP(ethData, &s, 0x5000 | ACK, seqNumber, ackNumber, 0, 0, 0);
+                mqttState = IDLE;
+                break;
 
 
 

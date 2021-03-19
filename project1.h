@@ -5,6 +5,7 @@
 
 #include "tm4c123gh6pm.h"
 
+
 //-----------------------------------------------------------------------------
 // Serial Communication defines and functions
 //-----------------------------------------------------------------------------
@@ -82,7 +83,8 @@ void clearBuffer(USER_DATA* data)
 
 void reboot()
 {
-    NVIC_APINT_R = NVIC_APINT_VECTKEY | NVIC_APINT_VECT_RESET;
+
+    NVIC_APINT_R = NVIC_APINT_VECTKEY | NVIC_APINT_SYSRESETREQ;
 }
 
 
