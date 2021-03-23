@@ -6,6 +6,7 @@
 #include "tm4c123gh6pm.h"
 
 
+
 //-----------------------------------------------------------------------------
 // Serial Communication defines and functions
 //-----------------------------------------------------------------------------
@@ -46,6 +47,33 @@ bool strCompare(char *str1, char *str2)
     return true;
 }
 
+void printMenu()
+{
+    putsUart0("\t\r\n\n=======================================================\t\r\n");
+    putsUart0("IoT Project 1: MQTT Client Implementation\t\r\n");
+    putsUart0("Author: Sean-Michael Woerner\t\r\n");
+    putsUart0("=======================================================\t\r\n");
+    putsUart0("for more information type 'help'\t\r\n");
+    putsUart0("\t\r\n\n>");                        // Clear line and new line for next cmd
+}
+
+void printHelp()
+{
+    putsUart0("Showing list of available terminal commands:\t\r\n");
+    putsUart0("--------------------------------------------\t\r\n");
+    putsUart0("(1)reboot----------------------Restarts the microcontroller\t\r\n");
+    putsUart0("(2)status----------------------Displays the IP and MQTT address, the MQTT connection state, and the TCP FSM state\t\r\n");
+    putsUart0("(3)set IP <w.x.y.z>------------Sets the IP address and stores this address persistently in EEPROM\t\r\n");
+    putsUart0("(4)set MQTT <w.x.y.z>----------Sets the IP address of the MQTT broker and stores this address persistently in EEPROM\t\r\n");
+    putsUart0("(5)publish <TOPIC> <DATA>------Publishes a topic and associated data to the MQTT broker\t\r\n");
+    putsUart0("(6)subscribe <TOPIC>-----------Subscribes to a topic\t\r\n");
+    putsUart0("(7)unsubscribe <TOPIC>---------Unsubscribes from a topic\t\r\n");
+    putsUart0("(8)connect---------------------Sends a connect message to the MQTT broker\t\r\n");
+    putsUart0("(9)disconnect------------------Disconnects from the MQTT broker\t\r\n");
+    putsUart0("(10)flash----------------------Flash the EEPROM and erase all contents\t\r\n");
+
+}
+
 void clearScreen()
 {
     uint8_t skip;
@@ -80,40 +108,12 @@ void clearBuffer(USER_DATA* data)
 
 
 
-
+// Reboots the system from the Terminal
 void reboot()
 {
 
     NVIC_APINT_R = NVIC_APINT_VECTKEY | NVIC_APINT_SYSRESETREQ;
 }
-
-
-
-//---------------------------------------------------
-// VARIABLES
-//---------------------------------------------------
-
-// flag if 'enter' his hit by user (from terminal interface)
-extern bool isEnter;
-
-// bool to check if a valid cmd
-bool valid2 = false;
-
-bool isMQTT = false;
-bool connect = false;
-
-//these are setting flags in offsetFields in tcp header
-#define FIN     0x0001
-#define SYN     0x0002
-#define PSH     0x0003
-#define RST     0x0004
-#define ACK     0x0010
-
-uint32_t seqNumber = 200;
-uint32_t ackNumber = 0;
-
-uint8_t qos = QOS1;
-uint16_t packetID = 0x1234;
 
 
 

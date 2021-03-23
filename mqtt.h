@@ -20,6 +20,8 @@
 // Definitions of mqtt variables
 //-----------------------------------------------------------------------------
 
+// ***ALL NAMING CONVENTIONS AND VALUES COME FORM MQTT DOCUMENTATION***
+
 // Protocol level flag for version 3.1.1
 #define PROTOCOL_LEVEL 0x04
 
@@ -34,6 +36,7 @@
 #define PASSWORD_FLAG 64
 #define USERNAME_FLAG 128
 
+// QOS values
 #define QOS0                    0
 #define QOS1                    2
 #define QOS2                    4
@@ -72,7 +75,7 @@ typedef enum _packetType
     SUBSCRIBE = 0x82,
     SUBACK = 0x90,
     PUBACK = 0x40,
-    PINGERQ = 0xC0,
+    PINGREQ = 0xC0,
     PINGRESP = 0xD0,
     DISCONNECT = 0xE0
 } packetType;
@@ -95,19 +98,13 @@ typedef struct _connectVariableHeader
     uint8_t data[0];
 } connectVariableHeader;
 
+
 typedef struct _connackVariableHeader
 {
     uint8_t connectAcknowledgementFlags;
     uint8_t connectReturnCode;
 } connackVariableHeader;
 
-
-typedef struct _subscription
-{
-    char topicName[MAX_TOPIC_NAME_SIZE];
-    char message[MAX_MESSAGE_SIZE];
-    uint32_t remainingLength;
-} subscription;
 
 
 

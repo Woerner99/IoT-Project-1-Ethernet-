@@ -274,139 +274,12 @@ void storeIP(bool mqtt, uint8_t ip0, uint8_t ip1, uint8_t ip2, uint8_t ip3)
       }
 }
 
-void learnInstruction(char* name, uint8_t add, uint8_t data)
-{
-    uint32_t listSize = readEeprom(0);
-    uint8_t q;
-    uint8_t k;
-    uint32_t temp[(NAME_LENGTH/4) + 1];
-    uint16_t format = (listSize * ((NAME_LENGTH/4)+1)) + 1;
-
-    putsUart0("Learning Instruction...\t\r\n");
-
-    // clear Temp array for eeprom
-    for (q = 0; q < (NAME_LENGTH/4) + 1; q++)
-    {
-        temp[q] = 0;
-    }
-    // save name to temp
-    for (q = 0; q < (NAME_LENGTH) && name[q] != '\0'; q++)
-    {
-        temp[q/4] |= name[q] << ((4-1) - (q%4)) * 8;
-        k = q;
-    }
-    for (k ; k < (NAME_LENGTH); k++)
-    {
-        temp[k/4] |= ipAddressEEPROM[k] << ((4-1) - (q%4)) * 8;
-    }
-    // include associated address and data with new command
-    //temp[(NAME_LENGTH)/4] = (add << 8) | data;
-
-    for (q=0; q < (NAME_LENGTH/4) + 1; q++)
-    {
-        writeEeprom(q + format, temp[q]);
-    }
-
-    // get to next spot in list for next entry in the Eeprom
-    writeEeprom(0, listSize + 1);
-}
-
-
-
-void infoIndex(uint16_t index)
-{
-    uint32_t size = readEeprom(0);
-    uint8_t q = 0;
-    char name[NAME_LENGTH];
-    uint16_t start = (index * ((NAME_LENGTH / 4) + 1)) + 1;
-    //NAME_LENGTH/4 + 1 -> 3+1 => 4
-    //below should equal 4
-    uint32_t temp[(NAME_LENGTH / 4) + 1];
-    //clear the temp to zeros..
-    for (q = 0; q < (NAME_LENGTH / 4) + 1; q++)
-    {
-        temp[q] = 0;
-    }
-    if (index < size)
-    {
-        for (q = 0; q < (NAME_LENGTH / 4) + 1; q++)
-        {
-            temp[q] = readEeprom(start + q);
-        }
-        for (q = 0; q < NAME_LENGTH; q++)
-        {
-            name[q] = (temp[q / 4] << ((q % 4)) * 8) >> 3 * 8;
-        }
-        putsUart0("cmd name: ");
-        putsUart0(name);
-        putsUart0("\t\r\n");
-
-        //now retrieving the address and the data
-        uint8_t add = (temp[((NAME_LENGTH / 4) + 1) - 1] << 16) >> 24;
-        uint8_t data = (temp[((NAME_LENGTH / 4) + 1) - 1] << 24) >> 24;
-
-        putsUart0("The Address is: ");
-        convert2binary(add);
-        putsUart0("\t\r\n");
-        putsUart0("The Data is: ");
-        convert2binary(data);
-        putsUart0("\t\r\n");
-    }
-    else
-    {
-        putsUart0("Invalid Index\t\r\n");
-    }
-}
-
-
-// convert decimal to binary and then print
-void convert2binary(uint8_t x)
-{
-    uint8_t i;
-    for (i = 8; i > 0; i--)
-    {
-        if ((1 << (i - 1)) & x)
-        {
-            putcUart0('1');
-        }
-        else
-        {
-            putcUart0('0');
-        }
-    }
-}
-
 void printIP(uint8_t ip)
 {
     char str[10];
     sprintf(str, "%u", ip);
     putsUart0(str);
 }
-
-
-
-
-// Function to execute when the user types: "info NAME"
-void infoName(char *name)
-{
-    // first it is ideal that we get the index of said name
-    currentStatus = notFound;
-    uint8_t currentIndex = findIndex(name);
-    if (currentStatus == Found)
-    {
-        infoIndex(currentIndex);
-    }
-    else if (currentStatus == notFound)
-    {
-        putsUart0("The name was not found.\t\r\n");
-    }
-    else
-    {
-        putsUart0("Error!\t\r\n");
-    }
-
-}
-
 
 void getIPfromEEPROM(bool isMQTT,uint8_t* IP0, uint8_t* IP1, uint8_t* IP2, uint8_t* IP3)
 {
@@ -543,17 +416,6 @@ void listCommands()
 
 
 }
-
-uint16_t getInfo(char * name){
-    uint8_t pos,st;
-    uint32_t tempLength;
-    pos = findIndex(name);
-    st = (pos * 4);
-    tempLength = readEeprom(st + 4);
-    return ((tempLength << NAME_LENGTH) >> NAME_LENGTH);
-
-}
-
 
 
 

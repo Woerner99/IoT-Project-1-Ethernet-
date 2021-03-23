@@ -48,6 +48,32 @@ Target Platform: EK-TM4C123GXL Evaluation Board
 #define GREEN_LED PORTF,3
 
 
+//---------------------------------------------------
+// VARIABLES
+//---------------------------------------------------
+
+// flag if 'enter' his hit by user (from terminal interface)
+extern bool isEnter;
+
+bool isMQTT = false;
+bool connect = false;
+
+//these are setting flags in offsetFields in tcp header
+#define FIN     0x0001
+#define SYN     0x0002
+#define PSH     0x0003
+#define RST     0x0004
+#define ACK     0x0010
+
+uint32_t seqNumber = 200;
+uint32_t ackNumber = 0;
+
+uint8_t qos = QOS1;             //initial state for now, will be changed
+uint16_t packetID = 0x1234;
+
+uint8_t subackPayload;
+
+
 //-----------------------------------------------------------------------------
 // External methods
 //-----------------------------------------------------------------------------
@@ -87,8 +113,10 @@ extern void fillMQTTConnectPacket(uint8_t *packet, uint8_t flags, char *clientID
 extern bool mqttIsConnack(uint8_t *packet);
 extern void fillMQTTPacket(uint8_t *packet, packetType type, uint16_t *packetLength);
 extern void fillMQTTPublishPacket(uint8_t *packet, char *topic, uint16_t packetID, uint8_t qos, char *payload, uint16_t *packetLength);
+extern void fillMQTTSubscribePacket(uint8_t *packet, uint16_t packetID, char *topic, uint8_t qos, uint16_t *packetLength);
 extern void printState(state mqttState);
-extern bool mqttIsPingResponse(uint8_t* packet);
+extern uint16_t getPayloadSize(etherHeader* ether);
+extern uint8_t getSubackPayload(uint8_t* packet);
 
 
 // Terminal Interface Methods
@@ -200,14 +228,8 @@ int main(void)
     setPinValue(GREEN_LED, 0);
     waitMicrosecond(100000);
 
-
-
-    putsUart0("\t\r\n\n=======================================================\t\r\n");
-    putsUart0("IoT Project 1: MQTT Client Implementation\t\r\n");
-    putsUart0("Author: Sean-Michael Woerner\t\r\n");
-    putsUart0("=======================================================\t\r\n");
-    putsUart0("for more information type 'help'\t\r\n");
-    putsUart0("\t\r\n\n>");                        // Clear line and new line for next cmd
+    // Print the main menu on the terminal
+    printMenu();
 
     char *cmd;          // first data field
     char *cmd2;         // second data field
@@ -269,23 +291,10 @@ int main(void)
                 // "help": list available commands and their functions
                 if(strCompare(cmd, "help"))
                 {
-                    putsUart0("Showing list of available terminal commands:\t\r\n");
-                    putsUart0("--------------------------------------------\t\r\n");
-                    putsUart0("(1)reboot----------------------Restarts the microcontroller\t\r\n");
-                    putsUart0("(2)status----------------------Displays the IP and MQTT address, the MQTT connection state, and the TCP FSM state\t\r\n");
-                    putsUart0("(3)set IP <w.x.y.z>------------Sets the IP address and stores this address persistently in EEPROM\t\r\n");
-                    putsUart0("(4)set MQTT <w.x.y.z>----------Sets the IP address of the MQTT broker and stores this address persistently in EEPROM\t\r\n");
-                    putsUart0("(5)publish <TOPIC> <DATA>------Publishes a topic and associated data to the MQTT broker\t\r\n");
-                    putsUart0("(6)subscribe <TOPIC>-----------Subscribes to a topic\t\r\n");
-                    putsUart0("(7)unsubscribe <TOPIC>---------Unsubscribes from a topic\t\r\n");
-                    putsUart0("(8)connect---------------------Sends a connect message to the MQTT broker\t\r\n");
-                    putsUart0("(9)disconnect------------------Disconnects from the MQTT broker\t\r\n");
-                    putsUart0("(10)flash----------------------Flash the EEPROM and erase all contents\t\r\n");
-
-
+                    // print the list of commands
+                    printHelp();
                     clearBuffer(&data);
                 }
-
 
                 // publish <TOPIC> <DATA> to MQTT broker
                 if(isCommand(&data, "publish",2))
@@ -297,8 +306,8 @@ int main(void)
                     clearBuffer(&data);
                 }
 
-
-                // *FIXME* goes to initial start of program but gets stuck in ResetISR()
+                // Reboots the red board *NOTE*: don't use CCS when rebooting
+                // it will get thrown to ResetISR()
                 if(strCompare(cmd, "reboot"))
                 {
                     putsUart0("\t\r\nRebooting System ...\t\r\n");
@@ -306,8 +315,6 @@ int main(void)
                     reboot();
                     clearBuffer(&data);
                 }
-
-
 
                 // set IP address or MQTT address and store to EEPROM
                 if(isCommand(&data, "set", 5))
@@ -357,6 +364,18 @@ int main(void)
 
                     clearBuffer(&data);
                 }
+
+                if((isCommand(&data, "subscribe",1)))
+                {
+
+                    topic = getFieldString(&data, 1);
+                    mqttState = SUBSCRIBE_MQTT;
+                    clearBuffer(&data);
+                }
+
+
+
+
                 putsUart0("\t\r\n\n>");                        // Clear line and new line for next cmd
             }
         }
@@ -381,7 +400,7 @@ int main(void)
             mqttState = RECV_SYN_ACK;
             break;
         case CONNECT_MQTT:
-            fillMQTTConnectPacket(tcpReceived->data, CLEAN_SESSION, "test", 4, &size);
+            fillMQTTConnectPacket(tcpReceived->data, CLEAN_SESSION, "test_connection", 15, &size);
             sendTCP(ethData, &s, 0x5000 | PSH | ACK, seqNumber, ackNumber, 0, 0, size);
             mqttState = CONNACK_MQTT;
             break;
@@ -396,19 +415,17 @@ int main(void)
             case QOS1:
                 mqttState = PUBLISH_QOS1_MQTT;
                 break;
-            case QOS2:
-                //mqttState = PUBLISH_QOS2_MQTT;
-                break;
             }
-        case PINGREQ_MQTT:
-            fillMQTTPacket(tcpReceived->data, PINGREQ, &size);
-            sendTCP(ethData, &s, 0x5000 | PSH | ACK, seqNumber, ackNumber, 0, 0, size);
-            mqttState = PINGRESP_MQTT;
-            break;
         case DISCONNECT_MQTT:
             fillMQTTPacket(tcpReceived->data, DISCONNECT, &size);
             sendTCP(ethData, &s, 0x5000 | PSH | FIN | ACK, seqNumber, ackNumber, 0, 0, size);
             mqttState = FIN_WAIT_1;
+            break;
+
+        case SUBSCRIBE_MQTT:
+            fillMQTTSubscribePacket(tcpReceived->data, packetID, topic, QOS0, &size);
+            sendTCP(ethData, &s, 0x5000 | PSH | ACK, seqNumber, ackNumber, 0, 0, size);
+            mqttState = SUBACK_MQTT;
             break;
 
         case CLOSED:
@@ -471,15 +488,8 @@ int main(void)
                 }
                 break;
             case CONNACK_MQTT:
-                /*
-                if(!mqttIsConnack(tcpReceived->data))
-                {
-                    putsUart0("\t\r\nCONNACK MQTT error!\t\r\n");
-                    mqttState = CONNACK_MQTT;
-                }
-                */
                 seqNumber += size;
-                ackNumber = htonl(tcpReceived->sequenceNumber) + 4;
+                ackNumber = htonl(tcpReceived->sequenceNumber) + getPayloadSize(ethData);
                 sendTCP(ethData, &s, 0x5000 | ACK, seqNumber, ackNumber, 0, 0, 0);
                 mqttState = IDLE;
                 break;
@@ -488,15 +498,8 @@ int main(void)
                 seqNumber += size;
                 break;
             case PUBLISH_QOS1_MQTT:
-                /*
-                if(!mqttIsPuback(receivedTcpHeader->data, packetID))
-                  {
-                      putsUart0("State: PUBLISH_QOS1_MQTT error\n");
-                      mqttState = PUBLISH_QOS1_MQTT;
-                  }
-                  */
                 seqNumber += size;
-                ackNumber = htonl(tcpReceived->sequenceNumber) + 4;
+                ackNumber = htonl(tcpReceived->sequenceNumber) + getPayloadSize(ethData);
                 sendTCP(ethData, &s, 0x5000 | ACK, seqNumber, ackNumber, 0, 0, 0);
                 mqttState = IDLE;
                 break;
@@ -535,21 +538,19 @@ int main(void)
                     }
                 }
                 break;
+            case SUBACK_MQTT:
+                subackPayload = getSubackPayload(tcpReceived->data);
+                putsUart0("Max QoS: ");
+                char buffer2[150];
+                sprintf(buffer2,"%d",subackPayload);
+                putsUart0(buffer2);
+                putsUart0("\t\r\n");
 
-            case PINGRESP_MQTT:
-                if(!mqttIsPingResponse(tcpReceived->data))
-                {
-                    //putsUart0("State: PINGRESP_MQTT -> No ping response\n");
-                    mqttState = PINGRESP_MQTT;
-                }
-                // Take the size of the previous data sent in bytes and add it to the sequence number
                 seqNumber += size;
-                // Here, 4 is the size of the connack packet
-                ackNumber = htonl(tcpReceived->sequenceNumber) + 2;
+                ackNumber = htonl(tcpReceived->sequenceNumber) + getPayloadSize(ethData);
                 sendTCP(ethData, &s, 0x5000 | ACK, seqNumber, ackNumber, 0, 0, 0);
                 mqttState = IDLE;
                 break;
-
 
 
 

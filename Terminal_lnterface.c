@@ -138,7 +138,7 @@ void getsUart0(USER_DATA* data)
             {
                 putcUart0('\n');
                 data->buffer[count] = 0;
-                isEnter = true;
+                isEnter = true;             // bool to stop ethernet loop and enter user command
                 return;
             }
             else
@@ -333,99 +333,4 @@ bool isCommand(USER_DATA* data, const char strCommand[], uint8_t minArguments)
 
 }
 
-
-
-//-----------------------------------------------------------------------------
-// Main
-//-----------------------------------------------------------------------------
-
-/*
-int main (void)
- {
-    // Init Terminal HW
-    initTerminal();
-    // Init UART0
-    initUart0();
-    // Setup UART0 baud rate
-    setUart0BaudRate(115200, 40e6);
-    // Create instance of struct
-    USER_DATA data;
-
-    while(true)
-    {
-    // Get the string from the user
-    getsUart0(&data);
-
-    // Echo back to the user of the TTY interface for testing
-#ifdef DEBUG
-    putsUart0(data.buffer);
-    putcUart0('\r');
-    putcUart0('\n');
-#endif
-
-    //Parse Fields
-    parseFields(&data);
-
-    // Echo the different fields'content and type of each field
-#ifdef DEBUG
-    uint8_t i;
-    for (i = 0; i < data.fieldCount; i++)
-    {
-        putcUart0(data.fieldType[i]);
-        putcUart0('\t');
-        putsUart0(&data.buffer[data.fieldPosition[i]]);
-        putcUart0('\r');
-        putcUart0('\n');
-    }
-
-
-
-#endif
-
-    // Command evaluationbool valid = false;
-    // set add, data → add and data are integers
-    if (isCommand(&data, "set", 2))
-    {
-        int32_t add = getFieldInteger(&data, 1);
-        int32_t data = getFieldInteger(&data, 2);
-        valid = true;
-        // do something with this information
-        //putsUart0("Command is 'set' \n");
-    }
-    // alert ON|OFF → alert ON or alert OFF are the expected commands
-    if (isCommand(&data, "alert", 1))
-    {
-        char* str = getFieldString(&data, 1);
-        valid = true;
-        // process the string with your custom strcmp instruction, then do something
-        // putsUart0("Alert ON\n");
-    }
-    // Process other commands here
-    // Look for error
-    if (!valid)
-    {
-       // putsUart0("Invalid command\n");
-    }
-
-
-
-    // clean string buffer for next run
-    for (i=0; i < MAX_CHARS; i++)
-    {
-        data.buffer[i] = NULL;
-    }
-    for (i=0; i < MAX_FIELDS; i++)
-    {
-        data.fieldPosition[i] = 0;
-        data.fieldType[i] = NULL;
-    }
-    data.fieldCount = 0;
-
-
-    }
-
-
-}
-
-*/
 
